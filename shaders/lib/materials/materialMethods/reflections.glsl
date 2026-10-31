@@ -33,7 +33,8 @@ float refDist = far;
 
 vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerPos, float lViewPos, float z0,
                    sampler2D depthtex, float dither, float skyLightFactor, float fresnel,
-                   float smoothness, vec3 geoNormal, vec3 color, vec3 shadowMult, float highlightMult) {
+                   float smoothness, vec3 geoNormal, vec3 color, vec3 shadowMult, float highlightMult,
+                   vec3 normalGradX, vec3 normalGradY) {
     // ============================== Step 1: Prepare ============================== //
     #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
         vec2 rEdge = vec2(0.6, 0.55);
@@ -59,7 +60,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE && WATER_REFLECT_QUALITY >= 1
         // In COMPOSITE for translucents we just need to return WSR and that's it
         if (z0 != z1) {
-            vec4 reflection = getWSR(playerPos, normalMR, nViewPosR, RVdotU, RVdotS, z0, dither, refDist, true);
+            vec4 reflection = getWSR(playerPos, nViewPos, normalMR, nViewPosR, normalGradX, normalGradY, RVdotU, RVdotS, z0, dither, refDist, true);
             return reflection;
         }
     #endif

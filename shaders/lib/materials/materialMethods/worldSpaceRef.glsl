@@ -41,9 +41,28 @@
     #include "/lib/colors/moonPhaseInfluence.glsl"
 #endif
 
-vec2 getLocalTexCoord(vec3 local, vec3 normal) {
+vec2 projectToFace(vec3 v, vec3 normal) {
     vec3 absNormal = abs(normal);
-    return 1.0 - local.zy * absNormal.x - local.xz * absNormal.y - local.xy * absNormal.z;
+    return v.zy * absNormal.x + v.xz * absNormal.y + v.xy * absNormal.z;
+}
+
+vec2 getLocalTexCoord(vec3 local, vec3 normal) {
+    return 1.0 - projectToFace(local, normal);
+}
+
+void getReflectionTexGrads(vec3 rayDir, vec3 positionGradX, vec3 positionGradY, vec3 normal, vec2 textureScale,
+                           out vec2 textureGradX, out vec2 textureGradY) {
+    vec3 faceRayDir = rayDir / min(dot(normal, rayDir), -1e-6);
+    positionGradX -= faceRayDir * dot(normal, positionGradX);
+    positionGradY -= faceRayDir * dot(normal, positionGradY);
+    textureGradX = -textureScale * projectToFace(positionGradX, normal);
+    textureGradY = -textureScale * projectToFace(positionGradY, normal);
+}
+
+vec3 getWSRNormalGrad(vec3 normalDiff, float pixelStep) {
+    float diffLength = length(normalDiff);
+    if (diffLength > 0.5) return vec3(0.0);
+    return normalDiff * (max0(diffLength - 0.014) / max(diffLength, 1e-6) / pixelStep);
 }
 
 float getVoxelSpaceAO(ivec3 voxelPos, ivec3 normal, vec2 localTexCoord) {
@@ -64,7 +83,8 @@ float getVoxelSpaceAO(ivec3 voxelPos, ivec3 normal, vec2 localTexCoord) {
     return 0.3 * (occHrz + occVrt) + 0.4;
 }
 
-vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3 rayDir, vec3 normal, uint mat, float dither) {
+vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3 rayDir, vec3 rayGradX, vec3 rayGradY,
+                         vec3 curvatureGradX, vec3 curvatureGradY, vec3 normal, uint mat, float dither) {
     faceData faceData = getFaceData(voxelPos, normal);
     if (faceData.textureBounds.z < 1e-6) return vec4(-1.0);
 
@@ -74,30 +94,37 @@ vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
     vec2 textureRadVec2 = faceData.textureBounds.z * vec2(1.0, textureSizeAtlas.x / textureSizeAtlas.y);
     vec2 textureCoord = faceData.textureBounds.xy + 2.0 * textureRadVec2 * localTexCoord;
 
-    float virtualDist   = length(playerPos - oldPlayerPos) + length(oldPlayerPos);
-    float textureFactor = length(textureRadVec2 * textureSizeAtlas) * 3.0;
-    float lod = 0.5 * log2(virtualDist * textureFactor / gbufferProjection[0][0] / abs(dot(normal, rayDir)) / viewHeight / REFLECTION_RES);
+    float hitDist = length(playerPos - oldPlayerPos);
+    float virtualDist = hitDist + length(oldPlayerPos);
+    vec2 textureGradX, textureGradY;
+    getReflectionTexGrads(rayDir, virtualDist * rayGradX + hitDist * curvatureGradX, virtualDist * rayGradY + hitDist * curvatureGradY,
+                          normal, 2.0 * textureRadVec2, textureGradX, textureGradY);
 
-    vec4 color = texture2DLod(textureAtlas, textureCoord, lod) * vec4(faceData.glColor, 1.0);
+    vec4 color = textureGrad(textureAtlas, textureCoord, textureGradX, textureGradY) * vec4(faceData.glColor, 1.0);
+
+    if (color.a <= 0.5) return vec4(-1.0);
 
     #if MC_VERSION >= 12111 && IRIS_VERSION < 11005
         // stupid fake lods because custom texture lods broke with Iris in newer mc versions
-        vec2 lodCoordSpan = localTexCoord / pow(2.0, int(1.5 + pow2(max0(lod)) + 0.0 * dither));
+        vec2 texelGradX = textureGradX * textureSizeAtlas;
+        vec2 texelGradY = textureGradY * textureSizeAtlas;
+        float lod = 0.5 * log2(max(max(dot(texelGradX, texelGradX), dot(texelGradY, texelGradY)), 1e-12));
+        float fakeLod = 0.5 * lod;
+        vec2 lodCoordSpan = localTexCoord / pow(2.0, int(1.5 + pow2(max0(fakeLod)) + 0.0 * dither));
 
         vec2 lodCoord1 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * (0.5 + lodCoordSpan);
         vec2 lodCoord2 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * (0.25 + lodCoordSpan);
         vec2 lodCoord3 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * lodCoordSpan;
-        vec4 lodColor1 = texture2DLod(textureAtlas, lodCoord1, lod) * vec4(faceData.glColor, 1.0);
-        vec4 lodColor2 = texture2DLod(textureAtlas, lodCoord2, lod) * vec4(faceData.glColor, 1.0);
-        vec4 lodColor3 = texture2DLod(textureAtlas, lodCoord3, lod) * vec4(faceData.glColor, 1.0);
+        vec4 lodColor1 = texture2DLod(textureAtlas, lodCoord1, fakeLod) * vec4(faceData.glColor, 1.0);
+        vec4 lodColor2 = texture2DLod(textureAtlas, lodCoord2, fakeLod) * vec4(faceData.glColor, 1.0);
+        vec4 lodColor3 = texture2DLod(textureAtlas, lodCoord3, fakeLod) * vec4(faceData.glColor, 1.0);
 
-        float lodMix = clamp01(lod - 0.75 + 0.25 * dither);
+        float lodMix = clamp01(fakeLod - 0.75 + 0.25 * dither);
         color = mix(color, 0.333333 * (lodColor1 + lodColor2 + lodColor3), lodMix);
         if (dot(color.rgb, vec3(0.333333)) - 0.5 < 0.49) color.a = mix(color.a, 1.0, lodMix);
+        if (color.a < 0.0041) return vec4(-1.0);
         //
     #endif
-
-    if (color.a < 0.0041) return vec4(-1.0); // Note that the cutout parts of leaves have a color.a of about 0.004
 
     bool noSmoothLighting = false, noDirectionalShading = false;
     int subsurfaceMode = 0;
@@ -209,7 +236,8 @@ vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
     return vec4(color.rgb * lighting + maRecolor, alphaFade);
 }
 
-vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, float RVdotU, float RVdotS, float dither, out float traceLength) {
+vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, vec3 rayGradY, vec3 curvatureGradX, vec3 curvatureGradY,
+                   float RVdotU, float RVdotS, float dither, out float traceLength) {
     vec3 stepAxis = vec3(0.0);
     vec3 stepDir = sign(rayDir);
     vec3 stepSizes = 1.0 / abs(rayDir);
@@ -234,10 +262,14 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, float RVdotU, flo
                 if (mat > 0u) {
                     traceLength = 4.0 * dist1 + dist0;
 
-                    vec3 normal = -stepAxis * stepDir;
+                    vec3 hitWeight = stepAxis * abs(rayDir);
+                    vec3 hitAxis = stepAxis * vec3(equal(hitWeight, vec3(maxOf(hitWeight))));
+                    hitAxis *= vec3(1.0, 1.0 - hitAxis.x, (1.0 - hitAxis.x) * (1.0 - hitAxis.y));
+                    vec3 normal = -hitAxis * stepDir;
                     vec3 intersection = playerPos + (traceLength - 0.001) * rayDir; // consistency59SMG32: 0.001 offset to fix rare wsr glitches
 
-                    vec4 reflection = getShadedReflection(ivec3(voxelPosRT0), playerPos, intersection, rayDir, normal, mat, dither);
+                    vec4 reflection = getShadedReflection(ivec3(voxelPosRT0), playerPos, intersection, rayDir, rayGradX, rayGradY,
+                                                          curvatureGradX, curvatureGradY, normal, mat, dither);
                     if (reflection.a > -0.5) {
                         vec3 fadeout = smoothstep(0.0, 32.0, 0.5 * sceneVoxelVolumeSize - abs(playerPos));
                         reflection *= sqrt3(minOf(fadeout)) * 0.9 + 0.1;
@@ -272,7 +304,8 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, float RVdotU, flo
     return vec4(0.0);
 }
 
-vec4 getWSR(vec3 playerPos, vec3 normalMR, vec3 nViewPosR, float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent) {
+vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 normalGradX, vec3 normalGradY,
+            float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent) {
     vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * normalMR);
     float normalOffsetDist = 0.04; // Fixes artifacts. 0.03 is enough but use slightly higher to make sure
 
@@ -290,7 +323,24 @@ vec4 getWSR(vec3 playerPos, vec3 normalMR, vec3 nViewPosR, float RVdotU, float R
     vec3 voxelPos = playerToSceneVoxel(playerPos);
 
     if (CheckInsideSceneVoxelVolume(voxelPos)) {
-        vec4 wsrResult = voxelRayTrace(playerPos, voxelPos, rayDir, RVdotU, RVdotS, dither, wsrTraceLength);
+        vec2 projScale = vec2(gbufferProjection[0][0], gbufferProjection[1][1]);
+        vec2 pixelAngle = 2.0 * abs(nViewPos.z) / (projScale * vec2(viewWidth, viewHeight));
+        vec3 rayGradX = reflect(gbufferModelViewInverse[0].xyz, worldNormal) * pixelAngle.x;
+        vec3 rayGradY = reflect(gbufferModelViewInverse[1].xyz, worldNormal) * pixelAngle.y;
+        vec3 curvatureGradX = vec3(0.0), curvatureGradY = vec3(0.0);
+
+        if (isTranslucent) {
+            vec3 incidentDir = mat3(gbufferModelViewInverse) * nViewPos;
+            float VdotN = dot(incidentDir, worldNormal);
+            curvatureGradX = -2.0 * (dot(incidentDir, normalGradX) * worldNormal + VdotN * normalGradX);
+            curvatureGradY = -2.0 * (dot(incidentDir, normalGradY) * worldNormal + VdotN * normalGradY);
+
+            curvatureGradX *= min(1.0, 3.0 * pixelAngle.x / max(length(curvatureGradX), 1e-12));
+            curvatureGradY *= min(1.0, 3.0 * pixelAngle.y / max(length(curvatureGradY), 1e-12));
+        }
+
+        vec4 wsrResult = voxelRayTrace(playerPos, voxelPos, rayDir, rayGradX, rayGradY, curvatureGradX, curvatureGradY,
+                                       RVdotU, RVdotS, dither, wsrTraceLength);
 
         #if WORLD_SPACE_PLAYER_REF == 1
             if (!is_invisible && z0 > 0.56) {

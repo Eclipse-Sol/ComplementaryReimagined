@@ -84,6 +84,13 @@ void main() {
     z0 = texelFetch(depthtex0, texelCoord, 0).r;
     z1 = texelFetch(depthtex1, texelCoord, 0).r;
 
+    vec3 wsrNormalGradX = vec3(0.0), wsrNormalGradY = vec3(0.0);
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WATER_REFLECT_QUALITY >= 1
+        float wsrPixelStep = dFdx(texCoord.x) * viewWidth;
+        wsrNormalGradX = getWSRNormalGrad(dFdx(texture4.rgb), wsrPixelStep);
+        wsrNormalGradY = getWSRNormalGrad(dFdy(texture4.rgb), wsrPixelStep);
+    #endif
+
     #ifdef ATM_COLOR_MULTS
         atmColorMult = GetAtmColorMult();
         sqrtAtmColorMult = sqrt(atmColorMult);
@@ -159,7 +166,8 @@ void main() {
 
             vec4 reflection = GetReflection(refNormal, viewPos.xyz, nViewPos, playerPos, lViewPos, z0,
                                             depthtex1, dither, skyLightFactor, fresnel,
-                                            smoothnessD, vec3(0.0), vec3(0.0), vec3(0.0), 0.0);
+                                            smoothnessD, vec3(0.0), vec3(0.0), vec3(0.0), 0.0,
+                                            wsrNormalGradX, wsrNormalGradY);
 
             reflection.rgb *= reflectColor;
             reflectOutput = reflection;

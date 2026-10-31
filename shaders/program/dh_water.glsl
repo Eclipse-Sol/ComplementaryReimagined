@@ -161,7 +161,7 @@ void main() {
 
         vec4 reflection = GetReflection(normalM, viewPos.xyz, nViewPos, playerPos, lViewPos, -1.0,
                                         dhDepthTex, dither, skyLightFactor, fresnel,
-                                        smoothnessG, geoNormal, color.rgb, shadowMult, highlightMult);
+                                        smoothnessG, geoNormal, color.rgb, shadowMult, highlightMult, vec3(0.0), vec3(0.0));
 
         color.rgb = mix(color.rgb, reflection.rgb, fresnelM);
     #endif
