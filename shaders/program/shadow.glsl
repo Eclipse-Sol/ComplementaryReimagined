@@ -247,9 +247,17 @@ flat out vec4 glColor;
     #extension GL_ARB_shader_image_load_store : enable
 #endif
 
+#if COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && !defined SHADOW_WATER_PROGRAM
+    #define WSR_TERRAIN_CAPTURE
+#endif
+
 //Attributes//
 attribute vec4 mc_Entity;
 attribute vec4 mc_midTexCoord;
+
+#if defined WSR_TERRAIN_CAPTURE && WORLD_SPACE_SHAPES > 0
+    attribute vec4 at_tangent;
+#endif
 
 #if COLORED_LIGHTING_INTERNAL > 0
     attribute vec3 at_midBlock;
@@ -268,6 +276,7 @@ vec2 lmCoord;
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
         writeonly uniform uimage3D wsr_img;
         writeonly uniform uimage3D wsr_lod_img;
+        writeonly uniform uimage3D wsr_coarse_img;
     #endif
 #endif
 
@@ -287,7 +296,7 @@ vec2 lmCoord;
         #include "/lib/voxelization/puddleVoxelization.glsl"
     #endif
 
-    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+    #ifdef WSR_TERRAIN_CAPTURE
         #include "/lib/voxelization/reflectionVoxelization.glsl"
     #endif
 #endif
@@ -297,7 +306,8 @@ void main() {
     texCoord = gl_MultiTexCoord0.xy;
     lmCoord = GetLightMapCoordinates();
     glColor = gl_Color;
-    mat = int(mc_Entity.x + 0.5);
+    int rawMat = int(mc_Entity.x + 0.5);
+    mat = getReflectionMaterial(rawMat);
 
     position = shadowModelViewInverse * shadowProjectionInverse * ftransform();
 
@@ -328,18 +338,28 @@ void main() {
     }
 
     #if COLORED_LIGHTING_INTERNAL > 0
+        #ifdef WSR_TERRAIN_CAPTURE
+            bool reflectionRefresh = isReflectionTerrainStage() && isReflectionVoxelRefreshDue();
+            if (reflectionRefresh && mat == 10068) UpdateLavaHeightMap();
+            #if WORLD_SPACE_SHAPES > 0
+                if (reflectionRefresh && getReflectionShapeFamily(rawMat) > 0)
+                    UpdateReflectionShape(rawMat, at_tangent);
+            #endif
+        #endif
+
         if (gl_VertexID % 4 == 0) {
             UpdateVoxelMap(mat);
             #ifdef PUDDLE_VOXELIZATION
                 UpdatePuddleVoxelMap(mat);
             #endif
-            #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+            #ifdef WSR_TERRAIN_CAPTURE
                 vec3 normal = mat3(shadowModelViewInverse) * gl_NormalMatrix * gl_Normal;
-                UpdateSceneVoxelMap(mat, normal, position.xyz);
+                if (reflectionRefresh && (getReflectionShapeFamily(rawMat) == 0 || WORLD_SPACE_SHAPES <= 0))
+                    UpdateSceneVoxelMap(rawMat, normal, position.xyz);
             #endif
         }
 
-        #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_PLAYER_REF == 1
+        #if defined WSR_TERRAIN_CAPTURE && WORLD_SPACE_PLAYER_REF == 1
             UpdatePlayerVertexList(position.xyz);
         #endif
     #endif

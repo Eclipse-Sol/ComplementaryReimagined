@@ -105,7 +105,9 @@ if (mat < 11024) {
                                 }
                             } else {
                                 if (mat < 10044) { // Rails
-                                    color = texture2DLod(tex, texCoord, 0);
+                                    #ifndef DURING_WORLDSPACE_REF
+                                        color = texture2DLod(tex, texCoord, 0);
+                                    #endif
 
                                     noSmoothLighting = true;
                                     if (color.r > 0.1 && color.g + color.b < 0.1) { // Redstone Parts
@@ -1495,7 +1497,7 @@ if (mat < 11024) {
                         if (mat < 10528) {
                             if (mat < 10520) {
                                 if (mat < 10516) { // Chorus Flower:Dead
-                                    #ifndef VOXY_PATCH
+                                    #if !defined VOXY_PATCH && !defined DURING_WORLDSPACE_REF
                                         vec3 checkColor = texture2DLod(tex, texCoord, 0).rgb;
                                     #else
                                         vec3 checkColor = color.rgb;
@@ -2251,7 +2253,7 @@ if (mat < 11024) {
                         } else {
                             if (mat < 10760) {
                                 if (mat < 10756) { // Bamboo
-                                    #if ANISOTROPIC_FILTER == 0
+                                    #if ANISOTROPIC_FILTER == 0 || defined DURING_WORLDSPACE_REF
                                         vec4 checkColor = color;
                                     #else
                                         vec4 checkColor = texture2DLod(tex, texCoord, 0); // Fixes artifacts
@@ -2335,7 +2337,7 @@ if (mat < 11024) {
                         } else {
                             if (mat < 10792) {
                                 if (mat < 10788) { // Calibrated Sculk Sensor:Unlit
-                                    #if ANISOTROPIC_FILTER == 0
+                                    #if ANISOTROPIC_FILTER == 0 || defined DURING_WORLDSPACE_REF
                                         vec4 checkColor = color;
                                     #else
                                         vec4 checkColor = texture2D(tex, texCoord); // Fixes artifacts
@@ -2373,7 +2375,7 @@ if (mat < 11024) {
                                 else /*if (mat < 10792)*/ { // Calibrated Sculk Sensor:Lit
                                     lmCoordM = vec2(0.0, 0.0);
 
-                                    #if ANISOTROPIC_FILTER == 0
+                                    #if ANISOTROPIC_FILTER == 0 || defined DURING_WORLDSPACE_REF
                                         vec4 checkColor = color;
                                     #else
                                         vec4 checkColor = texture2D(tex, texCoord); // Fixes artifacts
@@ -2843,10 +2845,21 @@ if (mat < 11024) {
 }
 }
 
-#ifdef GBUFFERS_TERRAIN
+#if defined DURING_WORLDSPACE_REF
+    else { // Terrain portions of signs, beds, and bell
+        if (mat == 5004 || mat == 5016) noSmoothLighting = true;
+        else if (mat == 5028) {
+            if (color.r + color.g > color.b + 0.5) {
+                #include "/lib/materials/specificMaterials/terrain/goldBlock.glsl"
+            } else {
+                #include "/lib/materials/specificMaterials/terrain/stone.glsl"
+            }
+        }
+    }
+#elif defined GBUFFERS_TERRAIN
     else { // mat < 10000
         // Support for the Enhanced Block Entities mod. The mod makes block entities render in gbuffers_terrain
-        int blockEntityId = mat;
+        int blockEntityMat = mat;
         #include "/lib/materials/materialHandling/blockEntityIPBR.glsl"
     }
 #endif

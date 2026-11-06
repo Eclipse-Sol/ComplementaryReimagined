@@ -22,7 +22,7 @@ void GetCustomMaterials(inout vec4 color, inout vec3 normalM, inout vec2 lmCoord
                 if (entityId == 50008) parallaxFade = 1.1; // Item Frame, Glow Item Frame
             #endif
             #ifdef GBUFFERS_BLOCK
-                if (blockEntityId == 5004) parallaxFade = 1.1; // Signs
+                if (getReflectionMaterial(blockEntityId) == 5004) parallaxFade = 1.1; // Signs
             #endif
             #ifdef GBUFFERS_HAND
                 if (heldItemId == 40004 || heldItemId2 == 40004) parallaxFade = 1.1; // Filled Map

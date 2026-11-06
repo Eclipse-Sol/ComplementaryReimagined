@@ -167,6 +167,7 @@ uniform vec3 previousCameraPositionFract;
 
     uniform usampler3D wsr_sampler;
     uniform usampler3D wsr_lod_sampler;
+    uniform usampler3D wsr_coarse_sampler;
 
     #if WORLD_SPACE_PLAYER_REF == 1
         uniform sampler2D playerAtlas_sampler;

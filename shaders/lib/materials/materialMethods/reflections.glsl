@@ -47,7 +47,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         normalMR = normalize(mix(geoNormal, normalM, 0.05));
     #endif
 
-    vec3 nViewPosR = normalize(reflect(nViewPos, normalMR));
+    WSR_PRECISE vec3 nViewPosR = normalize(reflect(nViewPos, normalMR));
     float RVdotU = dot(nViewPosR, upVec);
     float RVdotS = dot(nViewPosR, sunVec);
 
@@ -57,18 +57,18 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
+    // In COMPOSITE, translucents only need WSR, so they skip SSR here and return from the WSR call in step 3
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE && WATER_REFLECT_QUALITY >= 1
-        // In COMPOSITE for translucents we just need to return WSR and that's it
-        if (z0 != z1) {
-            vec4 reflection = getWSR(playerPos, nViewPos, normalMR, nViewPosR, normalGradX, normalGradY, RVdotU, RVdotS, z0, dither, refDist, true);
-            return reflection;
-        }
+        bool wsrTranslucent = z0 != z1;
+    #else
+        const bool wsrTranslucent = false;
     #endif
 
     vec4 reflection = vec4(0.0);
-    #if (defined COMPOSITE || WATER_REFLECT_QUALITY >= 1) && (WORLD_SPACE_REFLECTIONS_INTERNAL == -1 || WORLD_SPACE_REF_MODE == 2)
+    #if (defined COMPOSITE || WATER_REFLECT_QUALITY >= 1) && (WORLD_SPACE_REFLECTIONS_INTERNAL == -1 || WORLD_SPACE_REF_MODE == 2) && !defined WSR_TRACE_PREPASS
         // Method 1: Ray Marched Reflection //
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
+            if (!wsrTranslucent) {
             // Ray Marching
             vec3 start = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
             #if defined GBUFFERS_WATER && WATER_STYLE >= 2
@@ -224,6 +224,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 float posDif = lViewPosRT - lViewPos;
                 reflection.a *= clamp(posDif + 3.0, 0.0, 1.0);
             }
+            }
         #endif
 
         // Method 2: Mirorred Image Reflection //
@@ -283,6 +284,25 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         if (reflection.a < 1.0)
     #endif
     {
+        #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE && (BLOCK_REFLECT_QUALITY >= 2 || WATER_REFLECT_QUALITY >= 1)
+            #if BLOCK_REFLECT_QUALITY < 2 && WATER_REFLECT_QUALITY < 2
+                if (wsrTranslucent)
+            #endif
+            {
+                float traceLength = far;
+                vec4 wsrReflection = getWSR(playerPos, nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
+                                            RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent);
+                if (wsrTranslucent) return wsrReflection;
+
+                refDist = min(refDist, traceLength);
+                reflection = mix(wsrReflection, vec4(reflection.rgb, 1.0), reflection.a);
+            }
+        #endif
+
+        #ifdef WSR_TRACE_PREPASS
+            return vec4(0.0);
+        #endif
+
         AddBackgroundReflection(reflection, color, playerPos, normalM, normalMR, nViewPos, nViewPosR,
                                 shadowMult, RVdotU, RVdotS, z0, dither, skyLightFactor, smoothness, highlightMult);
     }

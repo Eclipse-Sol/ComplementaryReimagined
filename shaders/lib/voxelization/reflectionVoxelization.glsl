@@ -1,10 +1,4 @@
-#if COLORED_LIGHTING < 512
-    const ivec3 sceneVoxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, 64, COLORED_LIGHTING_INTERNAL);
-#else
-    const ivec3 sceneVoxelVolumeSize = ivec3(512, 64, 512);
-#endif
-
-const ivec3 sceneVoxelLodVolumeSize = sceneVoxelVolumeSize / 4;
+#include "/lib/voxelization/reflectionVoxelVolume.glsl"
 
 vec3 playerToSceneVoxel(vec3 playerPos) {
     return playerPos + cameraPositionBestFract + 0.5 * vec3(sceneVoxelVolumeSize);
@@ -24,20 +18,56 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
     return clamp01(voxelPos) == voxelPos;
 }
 
-#include "/lib/voxelization/reflectionVoxelData.glsl"
+#if defined SHADOW && defined VERTEX_SHADER || defined SHAPE_SCATTER
+    void StoreReflectionCoarseOccupancy(ivec3 cell) {
+        ivec3 lower = max(cell - 1, ivec3(0)) / 16;
+        ivec3 upper = min(cell + 1, sceneVoxelVolumeSize - 1) / 16;
+        for (int z = lower.z; z <= upper.z; z++)
+            for (int y = lower.y; y <= upper.y; y++)
+                for (int x = lower.x; x <= upper.x; x++)
+                    imageStore(wsr_coarse_img, ivec3(x, y, z), uvec4(1u, 0u, 0u, 0u));
+    }
+#endif
 
 #if defined SHADOW && defined VERTEX_SHADER
-    void UpdateSceneVoxelMap(int mat, vec3 normal, vec3 position) {
-        ivec3 eligibleStages = ivec3(
-            MC_RENDER_STAGE_TERRAIN_SOLID,
-            MC_RENDER_STAGE_TERRAIN_CUTOUT,
-            MC_RENDER_STAGE_TERRAIN_CUTOUT_MIPPED
-        );
+    bool isReflectionTerrainStage() {
+        return renderStage == MC_RENDER_STAGE_TERRAIN_SOLID
+            || renderStage == MC_RENDER_STAGE_TERRAIN_CUTOUT
+            || renderStage == MC_RENDER_STAGE_TERRAIN_CUTOUT_MIPPED;
+    }
 
-        if (!any(equal(ivec3(renderStage), eligibleStages))) return;
+    vec3 modelToScenePos(vec3 modelPos) {
+        vec3 viewPos = mat3(gl_ModelViewMatrix) * modelPos + gl_ModelViewMatrix[3].xyz;
+        return mat3(shadowModelViewInverse) * viewPos + shadowModelViewInverse[3].xyz;
+    }
 
-        vec3 viewPos  = mat3(gl_ModelViewMatrix) * (gl_Vertex.xyz + at_midBlock.xyz / 64.0) + gl_ModelViewMatrix[3].xyz;
-        vec3 scenePos = mat3(shadowModelViewInverse) * viewPos + shadowModelViewInverse[3].xyz;
+    vec3 getBlockCenterModelPos() {
+        return gl_Vertex.xyz + at_midBlock.xyz / 64.0;
+    }
+#endif
+
+#include "/lib/voxelization/reflectionVoxelData.glsl"
+
+#if WORLD_SPACE_SHAPES > 0
+    #include "/lib/voxelization/reflectionShapeData.glsl"
+#endif
+
+#if defined SHADOW && defined VERTEX_SHADER
+    void UpdateLavaHeightMap() {
+        vec3 center = playerToSceneVoxel(modelToScenePos(getBlockCenterModelPos()));
+        if (any(lessThan(center, vec3(0.0))) || any(greaterThanEqual(center, vec3(sceneVoxelVolumeSize)))) return;
+
+        if (at_midBlock.y / 64.0 > 0.49) return;
+        vec3 vertex = playerToSceneVoxel(modelToScenePos(gl_Vertex.xyz));
+        ivec3 corner = ivec3(round(vertex.x), floor(center.y), round(vertex.z));
+        float height = clamp(vertex.y - floor(center.y), 0.0, 1.0);
+        storeLavaCorner(corner, height);
+    }
+
+    void UpdateSceneVoxelMap(int rawMat, vec3 normal, vec3 position) {
+        int mat = getReflectionMaterial(rawMat);
+
+        vec3 scenePos = modelToScenePos(getBlockCenterModelPos());
         vec3 voxelPos = playerToSceneVoxel(scenePos);
 
         if (CheckInsideSceneVoxelVolume(voxelPos)) {
@@ -47,12 +77,20 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
             uint matM = mat > 10 ? uint(mat) : 1u;
             vec2 textureRad = abs(texCoord - mc_midTexCoord.xy);
             vec2 origin = mc_midTexCoord.xy - textureRad;
+            float lavaTextureRotation = 0.0;
 
             if (mat == 10132) { // Grass Block Regular
                 if (texture2D(tex, mc_midTexCoord.xy).a < 0.5) return; // Grass Block Side Overlay
             }
 
-            if (mat == 10009) { // Leaves
+            if (mat == 10009 || mat == 10011 || isReflectionCutoutCube(rawMat)) { // Leaves and cutout cubes
+                doSolidBlockCheck = false;
+            }
+
+            if (mat == 10113) { // Mangrove roots
+                // Block is super slow in WSR, remove internal quads!
+                vec3 local = playerToSceneVoxel(position) - floor(voxelPos);
+                if (dot(local - 0.5, normal) < 0.49) return;
                 doSolidBlockCheck = false;
             }
 
@@ -65,11 +103,23 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
                 origin.y += 2.0 / atlasSize.y;
             }
 
-            if (mat == 10068 // Lava
-            ) {
-                if (abs(dot(textureRad, vec2(atlasSize.x, -atlasSize.y))) < 6.5)
-                    storeToAllFaces = true;
-                else return;
+            if (mat == 10068) { // Lava
+                vec3 vertexPos = playerToSceneVoxel(modelToScenePos(gl_Vertex.xyz));
+                if (abs(normal.y) > 0.1) {
+                    normal = vec3(0.0, sign(normal.y), 0.0);
+                    // Flow rotates the top UVs...
+                    textureRad.x = length(textureRad * vec2(atlasSize)) * 0.70710678 / atlasSize.x;
+                    textureRad.y = textureRad.x * atlasSize.x / atlasSize.y;
+                    origin = mc_midTexCoord.xy - textureRad;
+                    if (normal.y > 0.0) {
+                        vec2 corner = 0.5 - (vertexPos.xz - floor(voxelPos.xz));
+                        vec2 uvCorner = (texCoord - mc_midTexCoord.xy) * vec2(atlasSize);
+                        lavaTextureRotation = atan(corner.x * uvCorner.y - corner.y * uvCorner.x, dot(corner, uvCorner));
+                    }
+                } else {
+                    float height = vertexPos.y - floor(voxelPos.y);
+                    origin.y = texCoord.y - 2.0 * textureRad.x * atlasSize.x / atlasSize.y * (1.0 - height);
+                }
             }
 
             // Half blocks that we want to display as full blocks in reflections
@@ -174,7 +224,11 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
 
             imageStore(wsr_img, ivec3(voxelPos), uvec4(matM, 0u, 0u, 0u));
             imageStore(wsr_lod_img, ivec3(voxelPos) / 4, uvec4(1u, 0u, 0u, 0u));
-            storeFaceData(ivec3(voxelPos), round(normal), origin, textureRad.x, storeToAllFaces, storeToAllFacesExceptTop, scenePos);
+            StoreReflectionCoarseOccupancy(ivec3(voxelPos));
+            if (mat == 10068 && normal.y > 0.99)
+                storeLavaFaceData(ivec3(voxelPos), origin, textureRad.x, lavaTextureRotation);
+            else
+                storeFaceData(ivec3(voxelPos), round(normal), origin, textureRad.x, storeToAllFaces, storeToAllFacesExceptTop, scenePos);
         }
     }
 

@@ -51,6 +51,15 @@ vec2 view = vec2(viewWidth, viewHeight);
     #include "/lib/voxelization/SSBOs/clearSSBOs.glsl"
 #endif
 
+#if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+    #include "/lib/voxelization/reflectionVoxelVolume.glsl"
+    #define SSBO_QUALIFIER
+    #include "/lib/voxelization/SSBOs/blockDataBuffer.glsl"
+    #if WORLD_SPACE_SHAPES > 0
+        #include "/lib/voxelization/SSBOs/shapeDataBuffer.glsl"
+    #endif
+#endif
+
 //Common Functions//
 #if IMAGE_SHARPENING > 0
     vec2 viewD = 1.0 / vec2(viewWidth, viewHeight);
@@ -150,6 +159,21 @@ void main() {
 
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_PLAYER_REF == 1
         clearSSBOs();
+    #endif
+
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+        int cornerPixel = int(gl_FragCoord.x) + int(gl_FragCoord.y) * int(viewWidth);
+        #if WORLD_SPACE_SHAPES > 0
+            if (isReflectionPeriodicRefresh(frameCounter + 1) && cornerPixel < 64 * WSR_REFRESH_INTERVAL) {
+        #else
+            if (cornerPixel < 64) {
+        #endif
+            int cornerIndex = (frameCounter * 64 + cornerPixel) % reflectionMetadataCount;
+            blockDataSSBO.data[cornerIndex].w = 0u;
+        }
+        #if WORLD_SPACE_SHAPES > 0
+            if (cornerPixel == 0) shapeDataSSBO.count = 0u;
+        #endif
     #endif
 
     #ifdef VIGNETTE_R

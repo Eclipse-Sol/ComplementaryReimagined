@@ -458,7 +458,7 @@ void main() {
     signMidCoordPos = sign(texMinMidCoord);
     absMidCoordPos  = abs(texMinMidCoord);
 
-    mat = int(mc_Entity.x + 0.5);
+    mat = getReflectionMaterial(int(mc_Entity.x + 0.5));
 
     vec4 position = gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex;
     vertexPos = position.xyz;

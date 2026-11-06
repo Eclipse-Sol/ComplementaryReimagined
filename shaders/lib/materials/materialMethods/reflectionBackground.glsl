@@ -108,13 +108,5 @@ void AddBackgroundReflection(inout vec4 reflection, vec3 color, vec3 playerPos, 
         vec3 skyReflection = vec3(0.0);
     #endif
 
-    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE && (BLOCK_REFLECT_QUALITY >= 2 || WATER_REFLECT_QUALITY >= 2)
-        float traceLength = far;
-        vec4 wsrReflection = getWSR(playerPos, nViewPos, normalMR, nViewPosR, vec3(0.0), vec3(0.0), RVdotU, RVdotS, z0, dither, traceLength, false);
-        refDist = min(refDist, traceLength);
-
-        reflection = mix(wsrReflection, vec4(reflection.rgb, 1.0), reflection.a);
-    #endif
-
     reflection.rgb = mix(skyReflection, reflection.rgb, reflection.a);
 }

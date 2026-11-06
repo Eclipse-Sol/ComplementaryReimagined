@@ -103,6 +103,7 @@ float shadowTime = shadowTimeVar2 * shadowTimeVar2;
 
 //Program//
 void main() {
+    int blockEntityMat = getReflectionMaterial(blockEntityId);
     vec4 color = texture2D(tex, texCoord);
     #ifdef GENERATED_NORMALS
         vec3 colorP = color.rgb;
@@ -139,11 +140,11 @@ void main() {
             GetCustomMaterials(color, normalM, lmCoordM, NdotU, shadowMult, smoothnessG, smoothnessD, highlightMult, emission, materialMask, viewPos, lViewPos);
         #endif
 
-        if (blockEntityId == 5025) { // End Portal, End Gateway
+        if (blockEntityMat == 5025) { // End Portal, End Gateway
             #ifdef SPECIAL_PORTAL_EFFECTS
                 #include "/lib/materials/specificMaterials/others/endPortalEffect.glsl"
             #endif
-        } else if (blockEntityId == 5004) { // Signs
+        } else if (blockEntityMat == 5004) { // Signs
             noSmoothLighting = true;
             if (glColor.r + glColor.g + glColor.b <= 2.99 || lmCoord.x > 0.999) { // Sign Text
                 #include "/lib/materials/specificMaterials/others/signText.glsl"
@@ -174,7 +175,7 @@ void main() {
     #endif
 
     #ifdef COLOR_CODED_PROGRAMS
-        ColorCodeProgram(color, blockEntityId);
+        ColorCodeProgram(color, blockEntityMat);
     #endif
 
     #ifdef GBUFFERS_BLOCK_TRANSLUCENT
@@ -262,6 +263,7 @@ out vec4 glColor;
 
 //Program//
 void main() {
+    int blockEntityMat = getReflectionMaterial(blockEntityId);
     gl_Position = ftransform();
     #ifdef TAA
         gl_Position.xy = TAAJitter(gl_Position.xy, gl_Position.w);
@@ -283,13 +285,13 @@ void main() {
     if (normal != normal) normal = -upVec; // Mod Fix: Fixes Better Nether Fireflies
 
     #ifdef IPBR
-        /*if (blockEntityId == 5024) { // End Portal, End Gateway
+        /*if (blockEntityMat == 5024) { // End Portal, End Gateway
             gl_Position.z -= 0.002;
         }*/
     #endif
 
     #if defined GENERATED_NORMALS || defined COATED_TEXTURES || defined POM
-        if (blockEntityId == 5008) { // Chest
+        if (blockEntityMat == 5008) { // Chest
             float fractWorldPosY = fract((gbufferModelViewInverse * gl_ModelViewMatrix * gl_Vertex).y + cameraPosition.y);
             if (fractWorldPosY > 0.56 && 0.57 > fractWorldPosY) gl_Position.z -= 0.0001;
         }

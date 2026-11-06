@@ -8,12 +8,26 @@
 //////////Fragment Shader//////////Fragment Shader//////////Fragment Shader//////////
 #ifdef FRAGMENT_SHADER
 
-noperspective in vec2 texCoord;
-
-in vec3 sunVec;
+#ifdef WSR_TRACE_PREPASS
+    vec2 texCoord;
+    vec3 sunVec = GetSunVector();
+    layout(local_size_x = 4, local_size_y = 8) in;
+    const vec2 workGroupsRender = vec2(WSR_REFLECTION_SCALE, WSR_REFLECTION_SCALE);
+#else
+    #ifdef WSR_SPLIT_ENABLED
+        vec2 texCoord;
+    #else
+        noperspective in vec2 texCoord;
+    #endif
+    in vec3 sunVec;
+#endif
 
 #ifdef END
-    flat in float vlFactor;
+    #ifdef WSR_TRACE_PREPASS
+        float vlFactor = 0.0;
+    #else
+        flat in float vlFactor;
+    #endif
 #endif
 
 //Pipeline Constants//
@@ -77,7 +91,17 @@ float GetLinearDepth(float depth) {
 
 //Program//
 void main() {
-    ivec2 texelCoord = ivec2(texCoord * view);
+    #ifdef WSR_SPLIT_ENABLED
+        ivec2 wsrSize = ivec2(view * WSR_REFLECTION_SCALE);
+        vec2 wsrPixelScale = view / vec2(wsrSize);
+        #ifdef WSR_TRACE_PREPASS
+            if (any(greaterThanEqual(ivec2(gl_GlobalInvocationID.xy), wsrSize))) return;
+        #endif
+        texCoord = gl_FragCoord.xy / vec2(wsrSize);
+        ivec2 texelCoord = ivec2(gl_FragCoord.xy * wsrPixelScale);
+    #else
+        ivec2 texelCoord = ivec2(texCoord * view);
+    #endif
     vec4 color = texelFetch(colortex0, texelCoord, 0);
     vec4 texture4 = texelFetch(colortex4, texelCoord, 0);
 
@@ -86,9 +110,15 @@ void main() {
 
     vec3 wsrNormalGradX = vec3(0.0), wsrNormalGradY = vec3(0.0);
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WATER_REFLECT_QUALITY >= 1
-        float wsrPixelStep = dFdx(texCoord.x) * viewWidth;
-        wsrNormalGradX = getWSRNormalGrad(dFdx(texture4.rgb), wsrPixelStep);
-        wsrNormalGradY = getWSRNormalGrad(dFdy(texture4.rgb), wsrPixelStep);
+        #ifndef WSR_TRACE_PREPASS
+            #ifdef WSR_SPLIT_ENABLED
+                float wsrPixelStep = wsrPixelScale.x;
+            #else
+                float wsrPixelStep = dFdx(texCoord.x) * viewWidth;
+            #endif
+            wsrNormalGradX = getWSRNormalGrad(dFdx(texture4.rgb), wsrPixelStep);
+            wsrNormalGradY = getWSRNormalGrad(dFdy(texture4.rgb), wsrPixelStep);
+        #endif
     #endif
 
     #ifdef ATM_COLOR_MULTS
@@ -104,16 +134,16 @@ void main() {
         #endif
     ) {
         vec3 texture6 = texelFetch(colortex6, texelCoord, 0).rgb;
-        vec3 normalM = mat3(gbufferModelView) * texture4.rgb;
+        WSR_PRECISE vec3 normalM = mat3(gbufferModelView) * texture4.rgb;
         vec4 screenPos = vec4(texCoord, z0, 1.0);
-        vec4 viewPos = gbufferProjectionInverse * (screenPos * 2.0 - 1.0);
+        WSR_PRECISE vec4 viewPos = gbufferProjectionInverse * (screenPos * 2.0 - 1.0);
         viewPos /= viewPos.w;
         float lViewPos = length(viewPos);
-        vec3 nViewPos = normalize(viewPos.xyz);
-        vec3 playerPos = ViewToPlayer(viewPos.xyz);
+        WSR_PRECISE vec3 nViewPos = normalize(viewPos.xyz);
+        WSR_PRECISE vec3 playerPos = ViewToPlayer(viewPos.xyz);
         bool entityOrParticle = z0 < 0.56;
 
-        float dither = texture2DLod(noisetex, gl_FragCoord.xy / 128.0, 0.0).b;
+        WSR_PRECISE float dither = texture2DLod(noisetex, gl_FragCoord.xy / 128.0, 0.0).b;
         #if defined TAA || defined PBR_REFLECTIONS
             dither = fract(dither + goldenRatio * mod(float(frameCounter), 3600.0));
         #endif
@@ -136,6 +166,25 @@ void main() {
         float fresnel = clamp(1.0 + dot(normalM, nViewPos), 0.0, 1.0);
 
         if (abs(fresnelM - 0.5) < 0.5) { // 0.0 fresnel doesnt need ref calculations, and 1.0 fresnel basically means error
+            #ifdef WSR_TRACE_PREPASS
+                hitBuffer.hits[reflectionPixelIndex()].ids = uvec4(0u);
+                #if WATER_REFLECT_QUALITY >= 1
+                    if (z0 != z1) {
+                        ivec2 p = ivec2(gl_GlobalInvocationID.xy), quad = p & ~ivec2(1);
+                        ivec2 px0 = ivec2((vec2(quad.x, p.y) + 0.5) * wsrPixelScale);
+                        ivec2 px1 = ivec2((vec2(min(quad.x + 1, wsrSize.x - 1), p.y) + 0.5) * wsrPixelScale);
+                        ivec2 py0 = ivec2((vec2(p.x, quad.y) + 0.5) * wsrPixelScale);
+                        ivec2 py1 = ivec2((vec2(p.x, min(quad.y + 1, wsrSize.y - 1)) + 0.5) * wsrPixelScale);
+                        float wsrPixelStep = wsrPixelScale.x;
+                        wsrNormalGradX = getWSRNormalGrad(
+                            texelFetch(colortex4, px1, 0).rgb - texelFetch(colortex4, px0, 0).rgb, wsrPixelStep
+                        );
+                        wsrNormalGradY = getWSRNormalGrad(
+                            texelFetch(colortex4, py1, 0).rgb - texelFetch(colortex4, py0, 0).rgb, wsrPixelStep
+                        );
+                    }
+                #endif
+            #endif
             #ifdef TAA
                 float noiseMult = 0.3;
             #else
@@ -154,7 +203,7 @@ void main() {
             noiseMult *= pow2(1.0 - smoothnessD);
 
             vec2 roughCoord = gl_FragCoord.xy / 128.0;
-            vec3 roughNoise = vec3(
+            WSR_PRECISE vec3 roughNoise = vec3(
                 texture2DLod(noisetex, roughCoord, 0.0).r,
                 texture2DLod(noisetex, roughCoord + 0.09375, 0.0).r,
                 texture2DLod(noisetex, roughCoord + 0.1875, 0.0).r
@@ -162,7 +211,7 @@ void main() {
             roughNoise = fract(roughNoise + vec3(dither, dither * goldenRatio, dither * pow2(goldenRatio)));
             roughNoise = noiseMult * (roughNoise - vec3(0.5));
 
-            vec3 refNormal = normalM + roughNoise;
+            WSR_PRECISE vec3 refNormal = normalM + roughNoise;
 
             vec4 reflection = GetReflection(refNormal, viewPos.xyz, nViewPos, playerPos, lViewPos, z0,
                                             depthtex1, dither, skyLightFactor, fresnel,
@@ -226,12 +275,16 @@ void main() {
     }
 
     /* DRAWBUFFERS:7 */
-    gl_FragData[0] = reflectOutput;
+    #ifndef WSR_TRACE_PREPASS
+        gl_FragData[0] = reflectOutput;
+    #endif
 
     // same check as #ifdef PBR_REFLECTIONS but for Optifine to understand:
     #if BLOCK_REFLECT_QUALITY >= 2 && RP_MODE >= 1
         /* DRAWBUFFERS:71 */
-        gl_FragData[1] = vec4(texture4.rgb, 1.0);
+        #ifndef WSR_TRACE_PREPASS
+            gl_FragData[1] = vec4(texture4.rgb, 1.0);
+        #endif
     #endif
 }
 
@@ -240,7 +293,9 @@ void main() {
 //////////Vertex Shader//////////Vertex Shader//////////Vertex Shader//////////
 #ifdef VERTEX_SHADER
 
-noperspective out vec2 texCoord;
+#ifndef WSR_SPLIT_ENABLED
+    noperspective out vec2 texCoord;
+#endif
 
 out vec3 sunVec;
 
@@ -260,7 +315,9 @@ out vec3 sunVec;
 void main() {
     gl_Position = ftransform();
 
-    texCoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    #ifndef WSR_SPLIT_ENABLED
+        texCoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    #endif
 
     sunVec = GetSunVector();
 

@@ -1186,3 +1186,8 @@ option.XLIGHT_I=Blocklight Intensity
 
 option.XLIGHT_CURVE=Blocklight Contrast
 option.XLIGHT_CURVE.comment=Adjusts how quickly the intensity of blocklight fades away as it travels distance away from the light source.
+
+option.WORLD_SPACE_SHAPES=WSR Non-Full Blocks
+option.WORLD_SPACE_SHAPES.comment=Reflects supported non-full blocks.
+value.WORLD_SPACE_SHAPES.-1=OFF
+value.WORLD_SPACE_SHAPES.1=ON

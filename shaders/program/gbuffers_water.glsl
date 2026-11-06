@@ -375,7 +375,7 @@ void main() {
 
     glColor = gl_Color;
 
-    mat = int(mc_Entity.x + 0.5);
+    mat = getReflectionMaterial(int(mc_Entity.x + 0.5));
 
     normal = normalize(gl_NormalMatrix * gl_Normal);
 
