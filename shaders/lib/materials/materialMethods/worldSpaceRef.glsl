@@ -697,10 +697,6 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
 vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 normalGradX, vec3 normalGradY,
             float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent) {
     WSR_PRECISE vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * normalMR);
-    float normalOffsetDist = 0.04; // Fixes artifacts. 0.03 is enough but use slightly higher to make sure
-
-    WSR_PRECISE vec3 traceOrigin = playerPos + normalOffsetDist * worldNormal;
-    playerPos = traceOrigin;
 
     WSR_PRECISE vec3 rayDir = mat3(gbufferModelViewInverse) * nViewPosR;
     WSR_PRECISE vec3 voxelPos = playerToSceneVoxel(playerPos);

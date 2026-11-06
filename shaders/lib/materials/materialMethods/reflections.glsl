@@ -54,6 +54,8 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     #if defined GBUFFERS_WATER && WATER_STYLE >= 2
         normalMR = normalize(mix(geoNormal, normalM, 0.8));
     #endif
+
+    WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
@@ -70,7 +72,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
             if (!wsrTranslucent) {
             // Ray Marching
-            vec3 start = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
+            vec3 start = reflectionStart;
             #if defined GBUFFERS_WATER && WATER_STYLE >= 2
                 vec3 vector = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
             #else
@@ -78,7 +80,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             #endif
             vector *= 0.5;
             vec3 vectorBase = vector;
-            vec3 viewPosRT = viewPos + vector;
+            vec3 viewPosRT = start + vector;
             vec3 tvector = vector;
 
             #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
@@ -290,7 +292,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             #endif
             {
                 float traceLength = far;
-                vec4 wsrReflection = getWSR(playerPos, nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
+                vec4 wsrReflection = getWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
                                             RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent);
                 if (wsrTranslucent) return wsrReflection;
 

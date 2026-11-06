@@ -63,6 +63,9 @@ float GetLinearDepth(float depth) {
 //Includes//
 #include "/lib/util/spaceConversion.glsl"
 #include "/lib/util/dither.glsl"
+#ifdef TAA
+    #include "/lib/antialiasing/jitter.glsl"
+#endif
 #include "/lib/atmospherics/fog/mainFog.glsl"
 #include "/lib/colors/skyColors.glsl"
 #include "/lib/colors/lightAndAmbientColors.glsl"
@@ -136,9 +139,12 @@ void main() {
         vec3 texture6 = texelFetch(colortex6, texelCoord, 0).rgb;
         WSR_PRECISE vec3 normalM = mat3(gbufferModelView) * texture4.rgb;
         vec4 screenPos = vec4(texCoord, z0, 1.0);
+        #ifdef TAA
+            screenPos.xy = TAAJitter(screenPos.xy, -0.5);
+        #endif
         WSR_PRECISE vec4 viewPos = gbufferProjectionInverse * (screenPos * 2.0 - 1.0);
         viewPos /= viewPos.w;
-        float lViewPos = length(viewPos);
+        float lViewPos = length(viewPos.xyz);
         WSR_PRECISE vec3 nViewPos = normalize(viewPos.xyz);
         WSR_PRECISE vec3 playerPos = ViewToPlayer(viewPos.xyz);
         bool entityOrParticle = z0 < 0.56;

@@ -39,7 +39,7 @@ int getFaceIndex(ivec3 voxelPos, vec3 normal) {
 }
 
 uvec3 packFaceData(faceData data) {
-	uvec3 uv = uvec3(clamp(data.textureBounds * 65536.0, 0.0, 65535.0));
+	uvec3 uv = uvec3(clamp(round(data.textureBounds * 65536.0), 0.0, 65535.0));
 	uvec2 lightmap = uvec2(clamp(data.lightmap * 4096.0, 0.0, 4095.0));
 	return uvec3((uv.x << 16u) | uv.y,
 				 uv.z | (lightmap.x << 16u) | ((lightmap.y & 15u) << 28u),
