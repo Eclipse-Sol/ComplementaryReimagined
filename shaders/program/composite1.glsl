@@ -161,12 +161,13 @@ void main() {
             #endif
 
             float fresnelM = pow2(texture2D(colortex4, texCoord).a); // including attenuation through fog and clouds
+            bool validReflectionStrength = abs(fresnelM - 0.5) < 0.5;
 
             #if defined DISTANT_HORIZONS || defined VOXY
                 fresnelM *= 1.0 - smoothstep(0.8, 1.05, lViewPos / far);
             #endif
 
-            if (abs(fresnelM - 0.5) < 0.5) { // 0.0 fresnel doesnt need ref calculations, and 1.0 fresnel basically means error
+            if (validReflectionStrength && abs(fresnelM - 0.5) < 0.5) {
                 if (z0 == z1 || z0 <= 0.56) { // Solids
                     #ifdef PBR_REFLECTIONS
                         if (fresnelM > 0.00001) {

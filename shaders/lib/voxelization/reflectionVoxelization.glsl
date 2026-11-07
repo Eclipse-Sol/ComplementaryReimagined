@@ -9,8 +9,8 @@ vec3 playerToPreviousSceneVoxel(vec3 previousPlayerPos) {
 }
 
 bool CheckInsideSceneVoxelVolume(vec3 voxelPos) {
-    voxelPos /= vec3(sceneVoxelVolumeSize);
-    return clamp01(voxelPos) == voxelPos;
+    return all(greaterThanEqual(voxelPos, vec3(0.0)))
+        && all(lessThan(voxelPos, vec3(sceneVoxelVolumeSize)));
 }
 
 bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
@@ -54,6 +54,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
 
 #if defined SHADOW && defined VERTEX_SHADER
     void UpdateLavaHeightMap() {
+        if (!reflectionStorageAvailable()) return;
         vec3 center = playerToSceneVoxel(modelToScenePos(getBlockCenterModelPos()));
         if (any(lessThan(center, vec3(0.0))) || any(greaterThanEqual(center, vec3(sceneVoxelVolumeSize)))) return;
 
@@ -65,6 +66,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
     }
 
     void UpdateSceneVoxelMap(int rawMat, vec3 normal, vec3 position) {
+        if (!reflectionStorageAvailable()) return;
         int mat = getReflectionMaterial(rawMat);
 
         vec3 scenePos = modelToScenePos(getBlockCenterModelPos());

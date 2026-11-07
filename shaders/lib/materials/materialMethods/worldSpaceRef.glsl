@@ -684,6 +684,7 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
 #if WORLD_SPACE_SHAPES <= 0 || defined WSR_SPLIT_ENABLED
 vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 normalGradX, vec3 normalGradY,
             float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent) {
+    if (!reflectionStorageAvailable()) return vec4(0.0);
     WSR_PRECISE vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * normalMR);
 
     WSR_PRECISE vec3 rayDir = mat3(gbufferModelViewInverse) * nViewPosR;

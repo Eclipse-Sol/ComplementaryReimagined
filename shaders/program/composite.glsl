@@ -221,7 +221,7 @@ void main() {
 
             vec4 reflection = GetReflection(refNormal, viewPos.xyz, nViewPos, playerPos, lViewPos, z0,
                                             depthtex1, dither, skyLightFactor, fresnel,
-                                            smoothnessD, vec3(0.0), vec3(0.0), vec3(0.0), 0.0,
+                                            smoothnessD, normalM, vec3(0.0), vec3(0.0), 0.0,
                                             wsrNormalGradX, wsrNormalGradY);
 
             reflection.rgb *= reflectColor;

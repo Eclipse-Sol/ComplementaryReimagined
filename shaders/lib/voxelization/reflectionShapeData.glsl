@@ -50,7 +50,8 @@ vec2 getShapeCuboidSize(uint mapping) {
 }
 
 uint getShapeState(ivec3 p) {
-    uint data = blockDataSSBO.data[getCellWordIndex(getSceneVoxelIndex(p))].w;
+    if (!reflectionStorageAvailable()) return 0u;
+    uint data = blockDataSSBO.metadata[getCellWordIndex(getSceneVoxelIndex(p))];
     return (data & 0xfffff000u) == getReflectionFrameStamp() ? data & 4095u : 0u;
 }
 
@@ -438,7 +439,7 @@ bool usesShapeListBounds(uint surfaceMaterialWord) {
                             if (spans.z) occupied |= occupied << 4u;
                             bits |= occupied;
                         }
-                        if (!plane) atomicOr(blockDataSSBO.data[getCellWordIndex(voxelIndex)].w, bits);
+                        if (!plane && reflectionStorageAvailable()) atomicOr(blockDataSSBO.metadata[getCellWordIndex(voxelIndex)], bits);
                         return;
                     }
                     next = getShapeNext(other);

@@ -1,3 +1,5 @@
+#include "/lib/voxelization/reflectionFaceGeometry.glsl"
+
 // shapeSurface.shading.w flags
 const uint shapeFaceMask = 0x07000000u;
 const uint shapeFlagSecondary = 1u << 27u;
@@ -109,9 +111,7 @@ uint computeModelTableShapeState(int family, int model, vec3 local) {
 }
 
 int getShapeFaceIndex(vec3 direction) {
-    vec3 a = abs(direction);
-    int axis = a.x > a.y && a.x > a.z ? 0 : (a.y > a.z ? 1 : 2);
-    return axis * 2 + int(direction[axis] > 0.0);
+    return getReflectionFaceIndex(direction);
 }
 
 vec3 getShapeFaceNormal(int axis) {

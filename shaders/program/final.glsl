@@ -162,18 +162,20 @@ void main() {
     #endif
 
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
-        int cornerPixel = int(gl_FragCoord.x) + int(gl_FragCoord.y) * int(viewWidth);
-        #if WORLD_SPACE_SHAPES > 0
-            if (isReflectionPeriodicRefresh(frameCounter + 1) && cornerPixel < 64 * WSR_REFRESH_INTERVAL) {
-        #else
-            if (cornerPixel < 64) {
-        #endif
-            int cornerIndex = (frameCounter * 64 + cornerPixel) % reflectionMetadataCount;
-            blockDataSSBO.data[cornerIndex].w = 0u;
+        if (reflectionStorageAvailable()) {
+            int cornerPixel = int(gl_FragCoord.x) + int(gl_FragCoord.y) * int(viewWidth);
+            #if WORLD_SPACE_SHAPES > 0
+                if (isReflectionPeriodicRefresh(frameCounter + 1) && cornerPixel < 64 * WSR_REFRESH_INTERVAL) {
+            #else
+                if (cornerPixel < 64) {
+            #endif
+                int cornerIndex = (frameCounter * 64 + cornerPixel) % reflectionMetadataCount;
+                blockDataSSBO.metadata[cornerIndex] = 0u;
+            }
+            #if WORLD_SPACE_SHAPES > 0
+                if (cornerPixel == 0) shapeDataSSBO.count = 0u;
+            #endif
         }
-        #if WORLD_SPACE_SHAPES > 0
-            if (cornerPixel == 0) shapeDataSSBO.count = 0u;
-        #endif
     #endif
 
     #ifdef VIGNETTE_R

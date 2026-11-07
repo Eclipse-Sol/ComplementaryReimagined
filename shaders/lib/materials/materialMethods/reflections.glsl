@@ -31,6 +31,18 @@ float refDist = far;
 
 #include "/lib/materials/materialMethods/reflectionBackground.glsl"
 
+float getWSRSurfaceBias(vec3 viewPos) {
+    return 0.04 + 3.576278687e-7 * abs(gbufferProjectionInverse[2][3]) * dot(viewPos, viewPos);
+}
+
+vec3 getWSRReflectionStart(vec3 viewPos, vec3 normal) {
+    return viewPos + normalize(normal) * getWSRSurfaceBias(viewPos);
+}
+
+vec3 getSSRReflectionStart(vec3 viewPos, vec3 normal, float distance, float fresnel) {
+    return viewPos + normal * (distance * 0.025 * (1.0 - fresnel) + 0.05);
+}
+
 vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerPos, float lViewPos, float z0,
                    sampler2D depthtex, float dither, float skyLightFactor, float fresnel,
                    float smoothness, vec3 geoNormal, vec3 color, vec3 shadowMult, float highlightMult,
@@ -55,11 +67,8 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         normalMR = normalize(mix(geoNormal, normalM, 0.8));
     #endif
 
-    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_REF_MODE == 1
-        WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * 0.04;
-    #else
-        WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
-    #endif
+    vec3 reflectionOriginNormal = dot(geoNormal, geoNormal) > 1e-6 ? geoNormal : normalMR;
+    WSR_PRECISE vec3 reflectionStart = getWSRReflectionStart(viewPos, reflectionOriginNormal);
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
@@ -76,7 +85,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
             if (!wsrTranslucent) {
             // Ray Marching
-            vec3 start = reflectionStart;
+            vec3 start = getSSRReflectionStart(viewPos, normalMR, lViewPos, fresnel);
             #if defined GBUFFERS_WATER && WATER_STYLE >= 2
                 vec3 vector = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
             #else
