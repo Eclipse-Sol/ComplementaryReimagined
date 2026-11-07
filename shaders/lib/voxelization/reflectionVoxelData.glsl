@@ -1,6 +1,8 @@
 #extension GL_ARB_gpu_shader5 : enable
 #extension GL_ARB_shading_language_packing : enable
 
+#include "/lib/voxelization/reflectionTextureMapping.glsl"
+
 struct faceData {
 	vec3 glColor;
 	vec2 lightmap;
@@ -50,10 +52,28 @@ vec2 unpackFaceLightmap(uvec3 data) {
 	return vec2((data.y >> 16u) & 4095u, (data.y >> 28u) | ((data.z >> 24u) << 4u)) / 4096.0;
 }
 
+uvec3 packReflectionFaceData(faceData face, uint orientation) {
+    uvec3 data = packFaceData(face);
+    data.y = (data.y & 0xf000ffffu) | (((data.y >> 19u) & 511u) << 16u) | (orientation << 25u);
+    return data;
+}
+
+faceData unpackReflectionFaceData(uvec3 data, out uint orientation) {
+    orientation = (data.y >> 25u) & 7u;
+    vec2 lightmap = vec2((data.y >> 16u) & 511u, (data.y >> 28u) | ((data.z >> 24u) << 4u)) / vec2(512.0, 4096.0);
+    return faceData(unpackUnorm4x8(data.z).xyz, lightmap,
+                    vec3(data.x >> 16u, data.x & 65535u, data.y & 65535u) / 65536.0);
+}
+
+faceData getFaceData(ivec3 voxelPos, vec3 normal, out uint orientation) {
+    faceData face = unpackReflectionFaceData(blockDataSSBO.data[getFaceIndex(voxelPos, normal)].xyz, orientation);
+    orientation ^= getDefaultReflectionFaceOrientation(normal);
+    return face;
+}
+
 faceData getFaceData(ivec3 voxelPos, vec3 normal) {
-	uvec3 data = blockDataSSBO.data[getFaceIndex(voxelPos, normal)].xyz;
-	return faceData(unpackUnorm4x8(data.z).xyz, unpackFaceLightmap(data),
-					vec3(data.x >> 16u, data.x & 65535u, data.y & 65535u) / 65536.0);
+    uint orientation;
+    return getFaceData(voxelPos, normal, orientation);
 }
 
 int getCellWordIndex(int voxelIndex) {
@@ -125,7 +145,7 @@ void storeLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float text
 	blockDataSSBO.data[index + sceneVoxelCount].w = uv.z | (angle << 16u) | (lightmap.x << 24u) | (lightmap.y << 28u);
 }
 
-void storeFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, bool storeToAllFaces, bool storeToAllFacesExceptTop, vec3 playerPos) {
+void storeFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, uint orientation, bool storeToAllFaces, bool storeToAllFacesExceptTop, vec3 playerPos) {
 	vec2 lmCoordM = lmCoord;
 
 	if (storeToAllFaces || storeToAllFacesExceptTop) {
@@ -141,7 +161,7 @@ void storeFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, b
 		lmCoordM = mix(max(lmCoord, oldFaceData.lightmap), lmCoord, lightBlend);
 	}
 
-	uvec3 newData = packFaceData(faceData(glColor.rgb, vec2(lmCoordM.x * 0.99 + 0.001, lmCoordM.y), vec3(origin, textureRad)));
+	uvec3 newData = packReflectionFaceData(faceData(glColor.rgb, vec2(lmCoordM.x * 0.99 + 0.001, lmCoordM.y), vec3(origin, textureRad)), orientation);
 
 	if (storeToAllFaces || storeToAllFacesExceptTop) {
 		vec3 faceOffsets[6] = vec3[6](

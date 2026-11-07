@@ -181,7 +181,7 @@ void main() {
 
     #if WATER_REFLECT_QUALITY > 0 && WORLD_SPACE_REFLECTIONS > 0
         /* DRAWBUFFERS:0634 */
-        gl_FragData[3] = vec4(0.0, 1.0, 0.0, 1.0);
+        gl_FragData[3] = vec4(0.0, 1.0, 0.0, -1.0);
     #endif
 }
 

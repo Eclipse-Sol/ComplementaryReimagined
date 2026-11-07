@@ -87,6 +87,10 @@ float GetLinearDepth(float depth) {
 #include "/lib/atmospherics/fog/mainFog.glsl"
 #include "/lib/materials/materialMethods/translucentTweaks.glsl"
 
+#ifdef TAA
+    #include "/lib/antialiasing/jitter.glsl"
+#endif
+
 #ifdef OVERWORLD
     #include "/lib/atmospherics/sky.glsl"
 #endif
@@ -109,10 +113,6 @@ float GetLinearDepth(float depth) {
     #endif
 
     #include "/lib/materials/materialMethods/reflections.glsl"
-#endif
-
-#ifdef TAA
-    #include "/lib/antialiasing/jitter.glsl"
 #endif
 
 #if defined GENERATED_NORMALS || defined COATED_TEXTURES || WATER_STYLE >= 2 || ANISOTROPIC_FILTER > 0 && defined ANISOTROPIC_FILTER_ON_TRANSLUCENTS

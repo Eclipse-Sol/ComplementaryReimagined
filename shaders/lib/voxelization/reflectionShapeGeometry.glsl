@@ -120,21 +120,6 @@ vec3 getShapeFaceNormal(int axis) {
     return result;
 }
 
-vec3 getShapeTerrainTangent(vec3 normal, vec3 tangent) {
-    #if defined IS_IRIS && MC_VERSION >= 260300 && IRIS_VERSION >= 11107
-        if (normal.z < 0.0 && normal.z > -0.001) {
-            float inv = 1.0 / (1.0 - normal.z);
-            vec3 oldU = vec3(1.0 - normal.x * normal.x * inv, -normal.x * normal.y * inv, normal.x);
-            vec3 oldV = vec3(normal.x * normal.y * inv, -1.0 + normal.y * normal.y * inv, -normal.y);
-            vec2 n = normalize(normal.xy);
-            vec3 newU = vec3(1.0 - n.x * n.x, -n.x * n.y, -n.x);
-            vec3 newV = vec3(-n.x * n.y, 1.0 - n.y * n.y, -n.y);
-            tangent = newU * dot(tangent, oldU) + newV * dot(tangent, oldV);
-        }
-    #endif
-    return tangent;
-}
-
 int getShapePlaneCode(vec3 direction) {
     vec3 a = abs(direction);
     int zeroAxis = a.x < a.y && a.x < a.z ? 0 : (a.y < a.z ? 1 : 2);

@@ -255,7 +255,7 @@ flat out vec4 glColor;
 attribute vec4 mc_Entity;
 attribute vec4 mc_midTexCoord;
 
-#if defined WSR_TERRAIN_CAPTURE && WORLD_SPACE_SHAPES > 0
+#if defined WSR_TERRAIN_CAPTURE
     attribute vec4 at_tangent;
 #endif
 

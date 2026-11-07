@@ -55,7 +55,11 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         normalMR = normalize(mix(geoNormal, normalM, 0.8));
     #endif
 
-    WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_REF_MODE == 1
+        WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * 0.04;
+    #else
+        WSR_PRECISE vec3 reflectionStart = viewPos + normalMR * (lViewPos * 0.025 * (1.0 - fresnel) + 0.05);
+    #endif
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
@@ -99,23 +103,27 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             float sampleDepth = 1.0;
             for (int i = 0; i < sampleCount; i++) {
                 refPos = nvec3(gbufferProjection * vec4(viewPosRT, 1.0)) * 0.5 + 0.5;
+                vec2 rayCoord = refPos.xy;
+                #ifdef TAA
+                    refPos.xy = TAAJitter(refPos.xy, 0.5);
+                #endif
                 if (abs(refPos.x - 0.5) > rEdge.x || abs(refPos.y - 0.5) > rEdge.y) break;
 
                 sampleDepth = texture2D(depthtex, refPos.xy).r;
-                rfragpos = nvec3(gbufferProjectionInverse * vec4(vec3(refPos.xy, sampleDepth) * 2.0 - 1.0, 1.0));
+                rfragpos = nvec3(gbufferProjectionInverse * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
 
                 #if defined GBUFFERS_WATER && (defined DISTANT_HORIZONS || defined VOXY)
                     if (sampleDepth >= 1.0) {
                         #ifdef VOXY
                             sampleDepth = texture2D(vxDepthTexOpaque, refPos.xy).r;
                             if (sampleDepth < 1.0) {
-                                rfragpos = nvec3(vxProjInv * vec4(vec3(refPos.xy, sampleDepth) * 2.0 - 1.0, 1.0));
+                                rfragpos = nvec3(vxProjInv * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
                             }
                         #endif
                         #ifdef DISTANT_HORIZONS
                             sampleDepth = texture2D(dhDepthTex1, refPos.xy).r;
                             if (sampleDepth < 1.0) {
-                                rfragpos = nvec3(dhProjectionInverse * vec4(vec3(refPos.xy, sampleDepth) * 2.0 - 1.0, 1.0));
+                                rfragpos = nvec3(dhProjectionInverse * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
                             }
                         #endif
                     }
@@ -141,12 +149,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             #ifdef COMPOSITE
                 bool possibleReflection = true;
             #else
-                vec3 viewRefPos = ScreenToView(refPos);
-                // #ifdef VOXY
-                //     vec3 viewRefPosVx = ScreenToViewVoxy(refPos);
-                //     if (length(viewRefPos) < length(viewRefPosVx)) viewRefPos = viewRefPosVx;
-                // #endif
-                bool possibleReflection = dot(normalize(viewRefPos - start), geoNormal) > 0.0;
+                bool possibleReflection = dot(normalize(rfragpos - start), geoNormal) > 0.0;
             #endif
 
             #ifdef VOXY_PATCH
@@ -154,15 +157,16 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 {
                     // Previous frame reprojection from Chocapic13
                     // Voxy water needs reflection reprojection due to rendering before deferred
-                    vec4 viewPosPrev = vxProjInv * vec4(refPos * 2.0 - 1.0, 1.0);
-                    viewPosPrev /= viewPosPrev.w;
-
+                    vec4 viewPosPrev = vec4(rfragpos, 1.0);
                     viewPosPrev = vxModelViewInv * viewPosPrev;
 
                     vec4 previousPosition = viewPosPrev + vec4(cameraPosition - previousCameraPosition, 0.0);
                     previousPosition = vxModelViewPrev * previousPosition;
                     previousPosition = vxProjPrev * previousPosition;
                     refPos.xy = previousPosition.xy / previousPosition.w * 0.5 + 0.5;
+                    #ifdef TAA
+                        refPos.xy = TAAJitter(refPos.xy, 0.5, (int(framemod8) + 7) % 8);
+                    #endif
                 }
             #endif
 
@@ -239,6 +243,9 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
 
             vec4 clipPosR = gbufferProjection * vec4(nViewPosR + verticalStretch * viewPos, 1.0);
             vec3 screenPosR = clipPosR.xyz / clipPosR.w * 0.5 + 0.5;
+            #ifdef TAA
+                screenPosR.xy = TAAJitter(screenPosR.xy, 0.5);
+            #endif
             vec2 screenPosRM = abs(screenPosR.xy - 0.5);
 
             if (screenPosRM.x < rEdge.x && screenPosRM.y < rEdge.y) {
@@ -246,12 +253,16 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 screenPosR.y += (dither - 0.5) * (0.03 * (edgeFactor.x + edgeFactor.y) + 0.001);
                 float z1R = texture2D(depthtex1, screenPosR.xy).x;
                 screenPosR.z = z1R;
-                vec3 viewPosR = ScreenToView(screenPosR);
+                vec3 rayScreenPos = screenPosR;
+                #ifdef TAA
+                    rayScreenPos.xy = TAAJitter(rayScreenPos.xy, -0.5);
+                #endif
+                vec3 viewPosR = ScreenToView(rayScreenPos);
                 float lViewPosR = length(viewPosR);
 
                 #ifdef DISTANT_HORIZONS
                     float z1RDH = texture2D(dhDepthTex, screenPosR.xy).x;
-                    vec4 screenPos1DH = vec4(screenPosR.xy, z1RDH, 1.0);
+                    vec4 screenPos1DH = vec4(rayScreenPos.xy, z1RDH, 1.0);
                     vec4 viewPos1DH = dhProjectionInverse * (screenPos1DH * 2.0 - 1.0);
                     viewPos1DH /= viewPos1DH.w;
                     lViewPosR = min(lViewPosR, length(viewPos1DH.xyz));

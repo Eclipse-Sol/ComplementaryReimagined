@@ -140,7 +140,7 @@ void main() {
         WSR_PRECISE vec3 normalM = mat3(gbufferModelView) * texture4.rgb;
         vec4 screenPos = vec4(texCoord, z0, 1.0);
         #ifdef TAA
-            screenPos.xy = TAAJitter(screenPos.xy, -0.5);
+            if (texture4.a >= 0.0) screenPos.xy = TAAJitter(screenPos.xy, -0.5);
         #endif
         WSR_PRECISE vec4 viewPos = gbufferProjectionInverse * (screenPos * 2.0 - 1.0);
         viewPos /= viewPos.w;
@@ -157,7 +157,7 @@ void main() {
         int materialMaskInt = int(texture6.g * 255.1);
         float skyLightFactor = texture6.b;
         float smoothnessD = texture6.r;
-        float fresnelM = texture4.a;
+        float fresnelM = abs(texture4.a);
         float intenseFresnel = 0.0;
         float ssao = 1.0;
         vec3 reflectColor = vec3(1.0);

@@ -46,22 +46,17 @@
     #include "/lib/colors/moonPhaseInfluence.glsl"
 #endif
 
-vec2 projectToFace(vec3 v, vec3 normal) {
-    vec3 absNormal = abs(normal);
-    return v.zy * absNormal.x + v.xz * absNormal.y + v.xy * absNormal.z;
-}
-
 vec2 getLocalTexCoord(vec3 local, vec3 normal) {
     return 1.0 - projectToFace(local, normal);
 }
 
 void getReflectionTexGrads(vec3 rayDir, vec3 positionGradX, vec3 positionGradY, vec3 normal, vec3 surfaceNormal,
-                           vec2 textureScale, out vec2 textureGradX, out vec2 textureGradY) {
+                           out vec2 textureGradX, out vec2 textureGradY) {
     vec3 faceRayDir = rayDir / min(dot(surfaceNormal, rayDir), -1e-6);
     positionGradX -= faceRayDir * dot(surfaceNormal, positionGradX);
     positionGradY -= faceRayDir * dot(surfaceNormal, positionGradY);
-    textureGradX = -textureScale * projectToFace(positionGradX, normal);
-    textureGradY = -textureScale * projectToFace(positionGradY, normal);
+    textureGradX = -projectToFace(positionGradX, normal);
+    textureGradY = -projectToFace(positionGradY, normal);
 }
 
 vec3 getWSRNormalGrad(vec3 normalDiff, float pixelStep) {
@@ -136,15 +131,7 @@ vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
     faceData faceData;
     vec2 faceTexCoord = getLocalTexCoord(fract(playerPos + cameraPositionBestFract), normal);
     vec2 localTexCoord = faceTexCoord;
-    bool cutoutCube = isReflectionCutoutCube(int(mat));
-    vec2 cubeUVSign = vec2(1.0);
-    if (cutoutCube) {
-        if (dot(normal, normal) < 0.5) return vec4(-1.0);
-        cubeUVSign = vec2(normal.x < -0.5 || abs(normal.y) > 0.5 || normal.z > 0.5 ? -1.0 : 1.0,
-                          normal.y > 0.5 ? -1.0 : 1.0);
-        localTexCoord = 1.0 - projectToFace(playerToSceneVoxel(playerPos) - vec3(voxelPos), normal);
-        localTexCoord = 0.5 + cubeUVSign * (localTexCoord - 0.5);
-    }
+    uint faceOrientation = 0u;
     bool lavaTop = mat == 10068u && normal.y > 0.99;
     mat2 lavaTextureRotation;
     vec2 textureSizeAtlas = textureSize(textureAtlas, 0);
@@ -171,7 +158,10 @@ vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
             localTexCoord = 0.5 + lavaTextureRotation * (localTexCoord - 0.5);
         #endif
     } else {
-        faceData = getFaceData(voxelPos, normal);
+        if (isReflectionCutoutCube(int(mat)) && dot(normal, normal) < 0.5) return vec4(-1.0);
+        faceData = getFaceData(voxelPos, normal, faceOrientation);
+        localTexCoord = getLocalTexCoord(playerToSceneVoxel(playerPos) - vec3(voxelPos), normal);
+        localTexCoord = clamp(0.5 + orientReflectionFaceVector(localTexCoord - 0.5, faceOrientation), 0.0, 1.0);
     }
     if (faceData.textureBounds.z < 1e-6) return vec4(-1.0);
 
@@ -212,12 +202,10 @@ vec4 getShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
     {
         getReflectionTexGrads(
             rayDir, virtualDist * rayGradX + hitDist * curvatureGradX, virtualDist * rayGradY + hitDist * curvatureGradY,
-            normal, surfaceNormal, 2.0 * textureRadVec2, textureGradX, textureGradY
+            normal, surfaceNormal, textureGradX, textureGradY
         );
-        if (cutoutCube) {
-            textureGradX *= cubeUVSign;
-            textureGradY *= cubeUVSign;
-        }
+        textureGradX = 2.0 * textureRadVec2 * orientReflectionFaceVector(textureGradX, faceOrientation);
+        textureGradY = 2.0 * textureRadVec2 * orientReflectionFaceVector(textureGradY, faceOrientation);
         if (lavaTop) {
             textureGradX = (lavaTextureRotation * (textureGradX * textureSizeAtlas)) / textureSizeAtlas;
             textureGradY = (lavaTextureRotation * (textureGradY * textureSizeAtlas)) / textureSizeAtlas;

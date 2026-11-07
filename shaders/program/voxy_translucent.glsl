@@ -62,6 +62,10 @@ mat3 tbnMatrix;
 #include "/lib/atmospherics/fog/mainFog.glsl"
 #include "/lib/materials/materialMethods/translucentTweaks.glsl"
 
+#ifdef TAA
+    #include "/lib/antialiasing/jitter.glsl"
+#endif
+
 #ifdef OVERWORLD
     #include "/lib/atmospherics/sky.glsl"
 #endif
@@ -88,10 +92,6 @@ mat3 tbnMatrix;
 
 #ifdef ATM_COLOR_MULTS
     #include "/lib/colors/colorMultipliers.glsl"
-#endif
-
-#ifdef TAA
-    #include "/lib/antialiasing/jitter.glsl"
 #endif
 
 #ifdef SNOWY_WORLD

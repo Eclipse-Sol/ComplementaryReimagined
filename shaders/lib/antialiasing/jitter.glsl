@@ -10,9 +10,9 @@ vec2 jitterOffsets[8] = vec2[8](
     vec2( 0.875, 0.875)
 );
 
-vec2 TAAJitter(vec2 coord, float w) {
+vec2 TAAJitter(vec2 coord, float w, int frameIndex) {
     #if TAA_JITTER > 0
-        vec2 offset = jitterOffsets[int(framemod8)] * (w / vec2(viewWidth, viewHeight));
+        vec2 offset = jitterOffsets[frameIndex] * (w / vec2(viewWidth, viewHeight));
         #if TAA_JITTER == 1
             offset *= 0.125;
         #elif TAA_JITTER == 2
@@ -22,4 +22,8 @@ vec2 TAAJitter(vec2 coord, float w) {
     #else
         return coord;
     #endif
+}
+
+vec2 TAAJitter(vec2 coord, float w) {
+    return TAAJitter(coord, w, int(framemod8));
 }

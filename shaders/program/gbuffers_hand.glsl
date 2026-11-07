@@ -171,7 +171,7 @@ void main() {
 
     #if BLOCK_REFLECT_QUALITY >= 2 && (RP_MODE >= 2 || defined IS_IRIS)
         /* DRAWBUFFERS:0364 */
-        gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, 1.0);
+        gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, -1.0);
     #endif
 }
 

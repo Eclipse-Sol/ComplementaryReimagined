@@ -258,7 +258,7 @@ void main() {
     #if defined GBUFFERS_ENTITIES_TRANSLUCENT && DETAIL_QUALITY > 0
         #if BLOCK_REFLECT_QUALITY >= 2 && RP_MODE >= 1 || WORLD_SPACE_REFLECTIONS > 0
             /* RENDERTARGETS: 0,3,6,4,13 */
-            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, 1.0);
+            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, -1.0);
             gl_FragData[4] = vec4(entityLinearDepth, 1.0, 1.0, 1.0);
         #else
             /* RENDERTARGETS: 0,3,6,13 */
@@ -267,7 +267,7 @@ void main() {
     #else
         #if BLOCK_REFLECT_QUALITY >= 2 && RP_MODE >= 1 || WORLD_SPACE_REFLECTIONS > 0
             /* DRAWBUFFERS:0364 */
-            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, 1.0);
+            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, -1.0);
         #endif
     #endif
 }

@@ -227,8 +227,12 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
             StoreReflectionCoarseOccupancy(ivec3(voxelPos));
             if (mat == 10068 && normal.y > 0.99)
                 storeLavaFaceData(ivec3(voxelPos), origin, textureRad.x, lavaTextureRotation);
-            else
-                storeFaceData(ivec3(voxelPos), round(normal), origin, textureRad.x, storeToAllFaces, storeToAllFacesExceptTop, scenePos);
+            else {
+                uint orientation = storeToAllFaces || storeToAllFacesExceptTop ? 0u
+                                 : mat == 10068 ? getDefaultReflectionFaceOrientation(round(normal))
+                                 : getReflectionFaceOrientation(round(normal), at_tangent);
+                storeFaceData(ivec3(voxelPos), round(normal), origin, textureRad.x, orientation, storeToAllFaces, storeToAllFacesExceptTop, scenePos);
+            }
         }
     }
 

@@ -246,6 +246,7 @@ void main() {
 
     vec3 normalM = vec3(0);
     float fresnelM = 0.0;
+    bool unjittered = false;
 
     if (z0 < 1.0) {
         #ifdef DISTANT_LIGHT_BOKEH
@@ -280,8 +281,9 @@ void main() {
         #include "/lib/materials/materialHandling/deferredMaterials.glsl"
 
         #ifdef PBR_REFLECTIONS
-            vec3 texture4 = texelFetch(colortex4, texelCoord, 0).rgb;
-            normalM = mat3(gbufferModelView) * texture4;
+            vec4 texture4 = texelFetch(colortex4, texelCoord, 0);
+            normalM = mat3(gbufferModelView) * texture4.rgb;
+            unjittered = texture4.a < 0.0;
             float fresnel = clamp(1.0 + dot(normalM, nViewPos), 0.0, 1.0);
         #else
             float fresnel = 0.0;
@@ -440,7 +442,9 @@ void main() {
     // same check as #ifdef PBR_REFLECTIONS but for Optifine to understand:
     #if BLOCK_REFLECT_QUALITY >= 2 && RP_MODE >= 1
         /*DRAWBUFFERS:054*/
-        gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, sqrt(fresnelM * color.a));
+        float reflectionStrength = sqrt(max(fresnelM * color.a, 0.0));
+        if (unjittered) reflectionStrength = reflectionStrength <= 0.5 / 127.0 ? -1.0 : -reflectionStrength;
+        gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
 
         #ifdef VOXY
             /* RENDERTARGETS: 0,5,4,19 */

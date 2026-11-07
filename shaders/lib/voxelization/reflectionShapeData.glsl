@@ -140,10 +140,8 @@ uint getShapeState(ivec3 p) {
         uint index = atomicAdd(shapeDataSSBO.count, 1u);
         if (index >= shapeSurfaceCapacity) return;
         shapeAOSSBO.corners[index] = vertexAO;
-        mat3 normalToWorld = mat3(shadowModelViewInverse) * gl_NormalMatrix;
-        vec3 normal = normalize(normalToWorld * gl_Normal);
-        vec3 tangent = normalize(normalToWorld * getShapeTerrainTangent(gl_Normal, terrainTangent.xyz));
-        vec3 bitangent = normalize(cross(tangent, normal)) * terrainTangent.w;
+        vec3 normal, tangent, bitangent;
+        getReflectionTerrainBasis(gl_Normal, terrainTangent, normal, tangent, bitangent);
         uvec3 shading = packFaceData(faceData(glColor.rgb, lmCoord, vec3(texCoord, 0.0)));
         uvec3 anchor = uvec3(round(clamp(local * 1024.0, 0.0, 1023.0)));
         uint basis = uint(getShapeFaceIndex(tangent)) | (uint(getShapeFaceIndex(bitangent)) << 3u);
