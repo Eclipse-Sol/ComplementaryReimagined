@@ -30,8 +30,8 @@ flat in vec4 glColor;
 //Includes//
 #include "/lib/colors/lightAndAmbientColors.glsl"
 
-#ifdef CAVE_FOG
-    #include "/lib/atmospherics/fog/caveFactor.glsl"
+#ifdef OVERWORLD
+    #include "/lib/atmospherics/sunMoonShading.glsl"
 #endif
 
 #ifdef COLOR_CODED_PROGRAMS
@@ -71,21 +71,7 @@ void main() {
                 discard;
             #endif
 
-            if (isSun) {
-                color.rgb = vec3(pow(dot(color.rgb, color.rgb) * 0.45, 6.0 - 5.0 * rainFactor));
-                color.rgb *= mix(vec3(1.1, 0.55, 0.0), vec3(0.35), rainFactor * 0.75) * 4.5;
-                color.rgb *= 0.25 + 0.75 * sunVisibility2 + 0.5 * noonFactor;
-            }
-
-            if (isMoon) {
-                color.rgb *= smoothstep1(min1(length(color.rgb))) * 1.3;
-            }
-
-            color.rgb *= GetHorizonFactor(VdotU);
-
-            #ifdef CAVE_FOG
-                color.rgb *= 1.0 - 0.75 * GetCaveFactor();
-            #endif
+            ShadeSunMoon(color.rgb, isSun, isMoon, VdotU);
         } else { // Custom Sky
             #if MC_VERSION >= 11300
                 color.rgb *= color.rgb * smoothstep1(sqrt1(max0(VdotU)));
@@ -95,13 +81,7 @@ void main() {
             #endif
         }
 
-        if (isEyeInWater == 1) color.rgb *= 0.25;
-
-        #ifdef SUN_MOON_DURING_RAIN
-            color.a *= 1.0 - 0.8 * rainFactor;
-        #else
-            color.a *= 1.0 - rainFactor;
-        #endif
+        FadeSkyTextured(color);
     #endif
 
     #ifdef NETHER
@@ -140,6 +120,27 @@ flat out vec4 glColor;
 //Common Functions//
 
 //Includes//
+#if defined OVERWORLD && defined WSR_SKY_OBJECTS
+    #define CELESTIAL_BUFFER_QUALIFIER
+    #include "/lib/voxelization/SSBOs/celestialQuadBuffer.glsl"
+
+    void StoreSunMoonCorner() {
+        vec3 viewPos = (gl_ModelViewMatrix * gl_Vertex).xyz;
+        vec3 nViewPos = normalize(viewPos);
+        float VdotS = dot(nViewPos, sunVec);
+        if (abs(VdotS) < 0.85) return;
+
+        int body = VdotS > 0.0 ? 0 : 1;
+        vec3 orbitNormal = mat3(gbufferModelView) * vec3(0.0, -SUN_ROTATION_DATA.y, SUN_ROTATION_DATA.x);
+        vec3 orbitTangent = cross(sunVec, orbitNormal);
+        int corner = body * 4 + int(dot(nViewPos, orbitTangent) > 0.0) + 2 * int(dot(nViewPos, orbitNormal) > 0.0);
+
+        celestialQuads.corners[corner] = vec4(viewPos, 1.0);
+        celestialQuads.texCoords[corner] = texCoord;
+        celestialQuads.colors[body] = gl_Color;
+        celestialQuads.frames[body] = frameCounter;
+    }
+#endif
 
 //Program//
 void main() {
@@ -151,6 +152,10 @@ void main() {
     #ifdef OVERWORLD
         upVec = normalize(gbufferModelView[1].xyz);
         sunVec = GetSunVector();
+
+        #ifdef WSR_SKY_OBJECTS
+            StoreSunMoonCorner();
+        #endif
     #endif
 }
 

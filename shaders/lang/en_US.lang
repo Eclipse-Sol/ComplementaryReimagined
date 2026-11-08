@@ -311,6 +311,11 @@ option.WORLD_SPACE_PLAYER_EQUIPMENT.comment=Displays armor and items in WSR.
 value.WORLD_SPACE_PLAYER_EQUIPMENT.-1=OFF
 value.WORLD_SPACE_PLAYER_EQUIPMENT.1=ON
 
+option.WORLD_SPACE_SKY_OBJECTS=WS Sun and Moon
+option.WORLD_SPACE_SKY_OBJECTS.comment=Shows the sun and moon in WSR.
+value.WORLD_SPACE_SKY_OBJECTS.-1=OFF
+value.WORLD_SPACE_SKY_OBJECTS.1=ON
+
 option.SSAO_I=Edge Shadow Intensity (SSAO)
 option.SSAO_I.comment=Determines the strength of Screen-Space Ambient Occlusion (SSAO) which adds extra ambient shadowing to the edges of the scene. §e[*]§r This setting won't work if SSAO is disabled in "Performance Settings".
 value.SSAO_I.0=OFF

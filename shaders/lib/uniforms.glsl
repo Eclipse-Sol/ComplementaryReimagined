@@ -165,6 +165,11 @@ uniform vec3 previousCameraPositionFract;
 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
     uniform sampler2D textureAtlas;
 
+    #ifdef WSR_SKY_OBJECTS
+        uniform sampler2D celestialSunTex;
+        uniform sampler2D celestialMoonTex;
+    #endif
+
     uniform usampler3D wsr_sampler;
     uniform usampler3D wsr_lod_sampler;
     uniform usampler3D wsr_coarse_sampler;

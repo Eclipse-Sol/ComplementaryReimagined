@@ -4,6 +4,52 @@
     #include "/lib/atmospherics/enderStars.glsl"
 #endif
 
+#if defined OVERWORLD && defined WSR_SKY_OBJECTS && (defined COMPOSITE || defined GBUFFERS_WATER)
+    #define REFLECT_SUN_MOON
+    #include "/lib/voxelization/SSBOs/celestialQuadBuffer.glsl"
+    #include "/lib/atmospherics/sunMoonShading.glsl"
+
+    vec3 GetReflectedSunMoon(vec3 nViewPosR, float RVdotU, float RVdotS) {
+        if (abs(RVdotS) < 0.85) return vec3(0.0);
+
+        int body = RVdotS > 0.0 ? 0 : 1;
+        if (celestialQuads.frames[body] != frameCounter) return vec3(0.0);
+
+        int first = body * 4;
+        vec3 origin = celestialQuads.corners[first].xyz;
+        vec3 edgeU = celestialQuads.corners[first + 1].xyz - origin;
+        vec3 edgeV = celestialQuads.corners[first + 2].xyz - origin;
+        vec3 quadNormal = cross(edgeU, edgeV);
+        float rayDist = dot(origin, quadNormal) / dot(nViewPosR, quadNormal);
+        if (!(rayDist > 0.0)) return vec3(0.0);
+
+        vec3 offset = nViewPosR * rayDist - origin;
+        float uu = dot(edgeU, edgeU), uv = dot(edgeU, edgeV), vv = dot(edgeV, edgeV);
+        float pu = dot(offset, edgeU), pv = dot(offset, edgeV);
+        vec2 quadPos = vec2(vv * pu - uv * pv, uu * pv - uv * pu) / (uu * vv - uv * uv);
+        if (any(lessThan(quadPos, vec2(0.0))) || any(greaterThan(quadPos, vec2(1.0)))) return vec3(0.0);
+
+        vec2 texCoord0 = celestialQuads.texCoords[first];
+        vec2 texCoordR = texCoord0 + quadPos.x * (celestialQuads.texCoords[first + 1] - texCoord0)
+                                   + quadPos.y * (celestialQuads.texCoords[first + 2] - texCoord0);
+
+        vec4 color;
+        if (body == 0) {
+            ivec2 texSize = textureSize(celestialSunTex, 0);
+            color = texelFetch(celestialSunTex, clamp(ivec2(texCoordR * vec2(texSize)), ivec2(0), texSize - 1), 0);
+        } else {
+            ivec2 texSize = textureSize(celestialMoonTex, 0);
+            color = texelFetch(celestialMoonTex, clamp(ivec2(texCoordR * vec2(texSize)), ivec2(0), texSize - 1), 0);
+        }
+        color.rgb *= celestialQuads.colors[body].rgb;
+
+        ShadeSunMoon(color.rgb, body == 0, body == 1, RVdotU);
+        FadeSkyTextured(color);
+
+        return color.rgb * color.a;
+    }
+#endif
+
 #if defined OVERWORLD && ( defined COMPOSITE && defined SKY_EFFECT_REFLECTION_OPAQUE || !defined COMPOSITE && defined SKY_EFFECT_REFLECTION_TRANSLUCENT)
     void DoSkyEffectReflection(inout vec3 skyReflection, vec3 playerPos, vec3 normalMR, vec3 nViewPosR, float RVdotU, float RVdotS, float dither) {
         float cloudLinearDepth = 1.0;
@@ -51,6 +97,10 @@ void AddBackgroundReflection(inout vec4 reflection, vec3 color, vec3 playerPos, 
         #endif
         #ifdef MOON_PHASE_INF_ATMOSPHERE
             skyReflection *= moonPhaseInfluence;
+        #endif
+
+        #ifdef REFLECT_SUN_MOON
+            skyReflection += GetReflectedSunMoon(nViewPosR, RVdotU, RVdotS);
         #endif
 
         #ifdef COMPOSITE
