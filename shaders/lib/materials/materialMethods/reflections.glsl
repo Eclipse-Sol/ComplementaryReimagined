@@ -32,11 +32,11 @@ float refDist = far;
 #include "/lib/materials/materialMethods/reflectionBackground.glsl"
 
 float getWSRSurfaceBias(vec3 viewPos) {
-    return 0.04 + 3.576278687e-7 * abs(gbufferProjectionInverse[2][3]) * dot(viewPos, viewPos);
+    return 0.001 + 3.576278687e-7 * abs(gbufferProjectionInverse[2][3]) * dot(viewPos, viewPos);
 }
 
-vec3 getWSRReflectionStart(vec3 viewPos, vec3 normal) {
-    return viewPos + normalize(normal) * getWSRSurfaceBias(viewPos);
+vec3 getWSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir) {
+    return viewPos + rayDir * (getWSRSurfaceBias(viewPos) / max(dot(rayDir, normalize(normal)), 0.04));
 }
 
 vec3 getSSRReflectionStart(vec3 viewPos, vec3 normal, float distance, float fresnel) {
@@ -68,7 +68,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     #endif
 
     vec3 reflectionOriginNormal = dot(geoNormal, geoNormal) > 1e-6 ? geoNormal : normalMR;
-    WSR_PRECISE vec3 reflectionStart = getWSRReflectionStart(viewPos, reflectionOriginNormal);
+    WSR_PRECISE vec3 reflectionStart = getWSRReflectionStart(viewPos, reflectionOriginNormal, nViewPosR);
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
@@ -313,7 +313,8 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             {
                 float traceLength = far;
                 vec4 wsrReflection = getWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
-                                            RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent);
+                                            RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent,
+                                            length(reflectionStart - viewPos));
                 if (wsrTranslucent) return wsrReflection;
 
                 refDist = min(refDist, traceLength);

@@ -417,8 +417,18 @@ vec4 finishWorldSpaceReflection(vec4 reflection, vec3 intersection, vec3 playerP
     return reflection;
 }
 
+float getCellEntryDistance(vec3 origin, vec3 rayDir, ivec3 cell, out uint entryAxis) {
+    vec3 dir = mix(vec3(1e-12), rayDir, greaterThanEqual(abs(rayDir), vec3(1e-12)));
+    vec3 t0 = (vec3(cell) - origin) / dir;
+    vec3 t1 = (vec3(cell) + 1.0 - origin) / dir;
+    vec3 tNear = min(t0, t1);
+    float entry = maxOf(tNear);
+    entryAxis = tNear.x == entry ? 1u : tNear.y == entry ? 2u : 4u;
+    return entry >= 0.0 && entry <= minOf(max(t0, t1)) ? entry : -1.0;
+}
+
 vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, vec3 rayGradY, vec3 curvatureGradX, vec3 curvatureGradY,
-                   float RVdotU, float RVdotS, float dither, out float traceLength) {
+                   float RVdotU, float RVdotS, float dither, out float traceLength, float startOffset) {
     #if defined WSR_SPLIT_ENABLED && !defined WSR_TRACE_PREPASS
         uint pixel = reflectionPixelIndex();
         reflectionHitRecord record = hitBuffer.hits[pixel];
@@ -475,6 +485,16 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
 
         float startDist = 0.0;
         uint startAxis = 0u;
+        ivec3 startCell = ivec3(floor(voxelPos));
+        if (texelFetch(wsr_sampler, startCell, 0).r != 0u) {
+            uint entryAxis;
+            float entryDist = getCellEntryDistance(voxelPos - startOffset * rayDir, rayDir, startCell, entryAxis);
+            if (entryDist >= 0.0) {
+                startDist = max(entryDist - 0.001, 0.0015) - startOffset;
+                startAxis = entryAxis;
+            }
+        }
+        float traceStart = startDist;
         for (int attempt = 0; attempt < 1024; attempt++) {
             bool found = false;
             uint mat = 0u;
@@ -544,7 +564,7 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
             }
             if (!found) break;
 
-            float cellEntryDist = max(0.0, hitDist - (hitDist == startDist ? 0.003 : 0.001));
+            float cellEntryDist = max(traceStart, hitDist - (hitDist == startDist ? 0.003 : 0.001));
 
             #if WORLD_SPACE_SHAPES > 0
                 bool hasSurfaces = (mat & 32768u) != 0u;
@@ -683,7 +703,8 @@ vec4 voxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
 
 #if WORLD_SPACE_SHAPES <= 0 || defined WSR_SPLIT_ENABLED
 vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 normalGradX, vec3 normalGradY,
-            float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent) {
+            float RVdotU, float RVdotS, float z0, float dither, out float wsrTraceLength, bool isTranslucent,
+            float startOffset) {
     if (!reflectionStorageAvailable()) return vec4(0.0);
     WSR_PRECISE vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * normalMR);
 
@@ -713,10 +734,10 @@ vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
             storeReflectionGradient(2u, curvatureGradX);
             storeReflectionGradient(3u, curvatureGradY);
             vec4 wsrResult = voxelRayTrace(playerPos, voxelPos, rayDir, vec3(0), vec3(0), vec3(0), vec3(0),
-                                           RVdotU, RVdotS, dither, wsrTraceLength);
+                                           RVdotU, RVdotS, dither, wsrTraceLength, startOffset);
         #else
             vec4 wsrResult = voxelRayTrace(playerPos, voxelPos, rayDir, rayGradX, rayGradY, curvatureGradX, curvatureGradY,
-                                           RVdotU, RVdotS, dither, wsrTraceLength);
+                                           RVdotU, RVdotS, dither, wsrTraceLength, startOffset);
         #endif
 
         #if WORLD_SPACE_PLAYER_REF == 1 && !defined WSR_TRACE_PREPASS
