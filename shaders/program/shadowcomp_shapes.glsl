@@ -12,11 +12,20 @@ const ivec3 workGroups = ivec3(8192, 1, 1);
     #include "/lib/voxelization/reflectionVoxelization.glsl"
 #endif
 
+#if defined WSR_PLAYER_EQUIPMENT && defined SHAPE_RESOLVE && WORLD_SPACE_SHAPES > 0
+    #include "/lib/voxelization/playerCaptureBounds.glsl"
+#endif
+
 void main() {
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0
         uint count = min(shapeDataSSBO.count, shapeSurfaceCapacity);
         #ifdef SHAPE_RESOLVE
-            if (gl_GlobalInvocationID.x == 0u) shapeDataSSBO.resolvedCount = count;
+            if (gl_GlobalInvocationID.x == 0u) {
+                shapeDataSSBO.resolvedCount = count;
+                #ifdef WSR_PLAYER_EQUIPMENT
+                    mergePlayerBounds();
+                #endif
+            }
         #endif
         #ifdef SHAPE_SCATTER
             count = shapeDataSSBO.resolvedCount;

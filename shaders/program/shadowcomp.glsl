@@ -8,6 +8,12 @@
 //////////Shadowcomp 1//////////Shadowcomp 1//////////Shadowcomp 1//////////
 #ifdef SHADOWCOMP
 
+#if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
+    #define SSBO_QUALIFIER
+    #include "/lib/voxelization/SSBOs/playerVerticesBuffer.glsl"
+    #include "/lib/voxelization/playerCaptureBounds.glsl"
+#endif
+
 #define OPTIMIZATION_ACT_BEHIND_PLAYER
 #define OPTIMIZATION_ACT_HALF_RATE_SPREADING
 //#define OPTIMIZATION_ACT_SHARED_MEMORY
@@ -76,6 +82,10 @@ vec4 GetLightCalculated(sampler3D lightSampler, ivec3 pos, ivec3 voxelVolumeSize
 
 //Program//
 void main() {
+    #if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
+        if (all(equal(gl_WorkGroupID, uvec3(0u))) && gl_LocalInvocationIndex == 0u)
+            mergePlayerBounds();
+    #endif
 	ivec3 pos = ivec3(gl_GlobalInvocationID);
 	vec3 posM = vec3(pos) / vec3(voxelVolumeSize);
 	vec3 posOffset = floor(previousCameraPosition) - floor(cameraPosition);

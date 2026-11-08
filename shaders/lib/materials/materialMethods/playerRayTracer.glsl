@@ -63,9 +63,18 @@ void CheckQuadAt(int i, vec3 playerPos, vec3 rayDir, inout vec3 albedo, inout fl
     }
 }
 
+#ifdef WSR_PLAYER_EQUIPMENT
+    #include "/lib/materials/materialMethods/playerEquipmentRayTracer.glsl"
+#endif
+
 bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 albedo, out vec3 normal) {
     float tMin = wsrTraceLength;
     vec3 aabbPos = playerPos * 1000.0;
+    #ifdef WSR_PLAYER_EQUIPMENT
+        if (!rayHitsBox(aabbPos, safeRcp(rayDir),
+                playerVerticesSSBO.playerMin.xyz, playerVerticesSSBO.playerMax.xyz, tMin * 1000.0)) return false;
+    #endif
+
 
     // Head
     if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.headMin, playerVerticesSSBO.headMax)) {
@@ -103,6 +112,10 @@ bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 
             CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
         }
     }
+
+    #ifdef WSR_PLAYER_EQUIPMENT
+        rayTracePlayerEquipment(playerPos, rayDir, tMin, albedo, normal);
+    #endif
 
     return tMin < wsrTraceLength;
 }

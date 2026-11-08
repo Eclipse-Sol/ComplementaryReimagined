@@ -247,12 +247,14 @@ flat out vec4 glColor;
     #extension GL_ARB_shader_image_load_store : enable
 #endif
 
-#if COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && !defined SHADOW_WATER_PROGRAM
+#if COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && !defined SHADOW_WATER_PROGRAM && !defined SHADOW_ENTITIES_PROGRAM
     #define WSR_TERRAIN_CAPTURE
 #endif
 
 //Attributes//
-attribute vec4 mc_Entity;
+#ifndef SHADOW_ENTITIES_PROGRAM
+    attribute vec4 mc_Entity;
+#endif
 attribute vec4 mc_midTexCoord;
 
 #if defined WSR_TERRAIN_CAPTURE
@@ -301,12 +303,27 @@ vec2 lmCoord;
     #endif
 #endif
 
+#if defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT
+    #define SSBO_QUALIFIER
+    #include "/lib/voxelization/SSBOs/playerVerticesBuffer.glsl"
+    #include "/lib/voxelization/playerVoxelization.glsl"
+#endif
+
+#ifdef SHADOW_ENTITIES_PROGRAM
+    flat out int playerShadowVertexID;
+#endif
+
 //Program//
 void main() {
     texCoord = gl_MultiTexCoord0.xy;
     lmCoord = GetLightMapCoordinates();
     glColor = gl_Color;
-    int rawMat = int(mc_Entity.x + 0.5);
+    #ifdef SHADOW_ENTITIES_PROGRAM
+        int rawMat = 0;
+        playerShadowVertexID = gl_VertexID;
+    #else
+        int rawMat = int(mc_Entity.x + 0.5);
+    #endif
     mat = getReflectionMaterial(rawMat);
 
     position = shadowModelViewInverse * shadowProjectionInverse * ftransform();
@@ -315,14 +332,17 @@ void main() {
         DoWave(position.xyz, mat);
     #endif
 
-    #ifdef CONNECTED_GLASS_EFFECT
+    #if defined CONNECTED_GLASS_EFFECT && defined SHADOW_ENTITIES_PROGRAM
+        signMidCoordPos = vec2(0.0);
+        absMidCoordPos = vec2(0.0);
+    #elif defined CONNECTED_GLASS_EFFECT
         vec2 midCoord = (gl_TextureMatrix[0] * mc_midTexCoord).st;
         vec2 texMinMidCoord = texCoord - midCoord;
         signMidCoordPos = sign(texMinMidCoord);
         absMidCoordPos  = abs(texMinMidCoord);
     #endif
 
-    #ifdef PERPENDICULAR_TWEAKS
+    #if defined PERPENDICULAR_TWEAKS && !defined SHADOW_ENTITIES_PROGRAM
         if (mat == 10005 || mat == 10017) { // Foliage
             #ifndef CONNECTED_GLASS_EFFECT
                 vec2 midCoord = (gl_TextureMatrix[0] * mc_midTexCoord).st;
@@ -359,7 +379,7 @@ void main() {
             #endif
         }
 
-        #if defined WSR_TERRAIN_CAPTURE && WORLD_SPACE_PLAYER_REF == 1
+        #if (defined WSR_TERRAIN_CAPTURE || defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT) && WORLD_SPACE_PLAYER_REF == 1
             UpdatePlayerVertexList(position.xyz);
         #endif
     #endif

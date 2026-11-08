@@ -16,5 +16,17 @@ void clearSSBOs() {
         playerVerticesSSBO.leftHandMax = ivec3(-1e6);
         playerVerticesSSBO.rightHandMin = ivec3(1e6);
         playerVerticesSSBO.rightHandMax = ivec3(-1e6);
+        #ifdef WSR_PLAYER_EQUIPMENT
+            playerVerticesSSBO.equipmentCount = 0u;
+            playerVerticesSSBO.equipmentOverflow = 0u;
+            playerVerticesSSBO.playerMin = ivec4(1000000);
+            playerVerticesSSBO.playerMax = ivec4(-1000000);
+            playerVerticesSSBO.equipmentMin = ivec4(1000000);
+            playerVerticesSSBO.equipmentMax = ivec4(-1000000);
+            for (int group = 0; group < PLAYER_EQUIPMENT_GROUP_COUNT; group++) {
+                playerVerticesSSBO.equipmentGroupMin[group] = ivec4(1000000);
+                playerVerticesSSBO.equipmentGroupMax[group] = ivec4(-1000000);
+            }
+        #endif
     }
 }

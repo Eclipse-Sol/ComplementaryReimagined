@@ -171,6 +171,9 @@ uniform vec3 previousCameraPositionFract;
 
     #if WORLD_SPACE_PLAYER_REF == 1
         uniform sampler2D playerAtlas_sampler;
+        #ifdef WSR_PLAYER_EQUIPMENT
+            uniform sampler2D playerEquipment_sampler;
+        #endif
     #endif
 
     #ifdef CLOUD_SHADOWS

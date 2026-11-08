@@ -42,6 +42,7 @@
             #if WORLD_SPACE_REFLECTIONS > 0
                 #define WORLD_SPACE_REFLECTIONS_INTERNAL 1
                 #define WORLD_SPACE_PLAYER_REF -1 //[-1 1]
+                #define WORLD_SPACE_PLAYER_EQUIPMENT -1 //[-1 1]
             #else
                 #define WORLD_SPACE_REFLECTIONS_INTERNAL -1
             #endif
@@ -714,6 +715,10 @@
     #endif
 
 //Very Common Stuff//
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_PLAYER_REF == 1 && WORLD_SPACE_PLAYER_EQUIPMENT == 1 && HIDE_ARMOR == 0
+        #define WSR_PLAYER_EQUIPMENT
+    #endif
+
     #ifndef VOXY_PATCH
         #include "/lib/uniforms.glsl"
     #endif
