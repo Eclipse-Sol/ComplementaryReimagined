@@ -1,4 +1,5 @@
 #extension GL_ARB_shader_storage_buffer_object : enable
+#extension GL_ARB_shader_image_load_store : enable
 
 #ifndef CELESTIAL_BUFFER_QUALIFIER
     #define CELESTIAL_BUFFER_QUALIFIER readonly
