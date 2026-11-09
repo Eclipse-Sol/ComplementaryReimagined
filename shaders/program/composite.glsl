@@ -138,7 +138,7 @@ void main() {
     ) {
         vec3 texture6 = texelFetch(colortex6, texelCoord, 0).rgb;
         WSR_PRECISE vec3 normalM = mat3(gbufferModelView) * texture4.rgb;
-        vec4 screenPos = vec4(texCoord, z0, 1.0);
+        vec4 screenPos = vec4((vec2(texelCoord) + 0.5) / view, z0, 1.0);
         #ifdef TAA
             if (texture4.a >= 0.0) screenPos.xy = TAAJitter(screenPos.xy, -0.5);
         #endif
