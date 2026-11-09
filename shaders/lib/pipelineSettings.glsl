@@ -16,9 +16,13 @@ const int colortex19Format = RGBA8;         //scene image for voxy reflections
 */
 
 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
-/* const int colortex4Format = RGBA16_SNORM; */
+/*
+const int colortex4Format = RGBA16_SNORM;   //normalM & reflection strength
+*/
 #else
-/* const int colortex4Format = RGBA8_SNORM; */
+/*
+const int colortex4Format = RGBA8_SNORM;    //normalM & reflection strength
+*/
 #endif
 
 const bool colortex0Clear = true;

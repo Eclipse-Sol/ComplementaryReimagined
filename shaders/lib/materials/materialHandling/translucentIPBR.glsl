@@ -29,7 +29,7 @@ if (mat < 32008) {
                     reflectMult /= color.a;
                     noGeneratedNormals = true;
                 #elif MIRROR_TINTED_GLASS == 100
-                    color.a = 0.99;
+                    color.a = 1.0;
                     fresnelM = 1.0;
                     noGeneratedNormals = true;
                 #endif

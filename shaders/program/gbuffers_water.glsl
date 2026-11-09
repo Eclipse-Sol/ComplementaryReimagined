@@ -289,6 +289,11 @@ void main() {
     gl_FragData[0] = color;
     gl_FragData[1] = vec4(1.0 - translucentMult.rgb, translucentMult.a);
 
+    #if WORLD_SPACE_REFLECTIONS > 0
+        // 1.0 in colortex4.a means no reflection, so cap at the just below the largest RGBA16_SNORM value
+        float reflectionStrength = min(sqrt(fresnelM * color.a * fogAlpha), 32766.0 / 32767.0);
+    #endif
+
     // supposed to be " #if defined WATER_REFRACTION || (WATER_REFLECT_QUALITY > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0) " but Optifine bad
     #if DETAIL_QUALITY >= 3 || (WATER_REFLECT_QUALITY > 0 && WORLD_SPACE_REFLECTIONS > 0)
         /* DRAWBUFFERS:036 */
@@ -296,12 +301,12 @@ void main() {
 
         #if WORLD_SPACE_REFLECTIONS > 0
             /* DRAWBUFFERS:03648 */
-            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, sqrt(fresnelM * color.a * fogAlpha));
+            gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
             gl_FragData[4] = vec4(reflection.rgb * fresnelM * color.a * fogAlpha, reflection.a);
         #endif
     #elif WORLD_SPACE_REFLECTIONS > 0
         /* DRAWBUFFERS:0348 */
-        gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, sqrt(fresnelM * color.a * fogAlpha));
+        gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
         gl_FragData[3] = vec4(reflection.rgb * fresnelM * color.a * fogAlpha, reflection.a);
     #endif
 }
