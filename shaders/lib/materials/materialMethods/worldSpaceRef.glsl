@@ -46,6 +46,10 @@
     #include "/lib/colors/moonPhaseInfluence.glsl"
 #endif
 
+#if defined WSR_PLAYER_EQUIPMENT && defined IPBR && !defined WSR_TRACE_PREPASS
+    #include "/lib/materials/materialMethods/playerEquipmentEmission.glsl"
+#endif
+
 vec2 getLocalTexCoord(vec3 local, vec3 normal) {
     return 1.0 - projectToFace(local, normal);
 }
@@ -744,8 +748,13 @@ vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
             if (!is_invisible && z0 > 0.56) {
                 vec3 albedo;
                 vec3 normal;
+                playerEquipmentHit equipmentHit;
 
-                if (rayTracePlayer(playerPos - 0.01 * rayDir, rayDir, wsrTraceLength, albedo, normal)) {
+                if (rayTracePlayer(playerPos - 0.01 * rayDir, rayDir, wsrTraceLength, albedo, normal, equipmentHit)) {
+                    float emission = 0.0;
+                    #if defined WSR_PLAYER_EQUIPMENT && defined IPBR
+                        emission = getPlayerEquipmentEmission(equipmentHit, normal, dither, albedo);
+                    #endif
                     vec2 lmCoord = eyeBrightness / 240.0;
 
                     #ifdef OVERWORLD
@@ -763,7 +772,7 @@ vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
                     vec3 specialLighting = pow(GetLuminance(lightVolume.rgb), 0.25) * DoLuminanceCorrection(pow(lightVolume.rgb, vec3(0.25)));
 
                     #if HELD_LIGHTING_MODE >= 1
-                        vec3 heldLighting = GetHeldLighting(playerPos, vec3(999999.0), 0.0);
+                        vec3 heldLighting = GetHeldLighting(playerPos, vec3(999999.0), emission);
                         specialLighting = sqrt(pow2(specialLighting) + sqrt(heldLighting));
                     #endif
 
@@ -779,6 +788,7 @@ vec4 getWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
                     #endif
 
                     vec3 lighting = sceneLighting + specialLighting * (1.0 - lmCoord.y * sunFactor) * XLIGHT_I + minLighting;
+                    lighting += emission * 0.8;
 
                     vec3 fadeout = smoothstep(0.0, 32.0, 0.5 * sceneVoxelVolumeSize - abs(playerPos));
                     float alphaFade = sqrt3(minOf(fadeout)) * 0.9 + 0.1;

@@ -8,7 +8,7 @@ bool rayHitsBox(vec3 origin, vec3 invDirection, ivec3 boxMin, ivec3 boxMax, floa
 }
 
 void rayTracePlayerEquipment(vec3 origin, vec3 direction, inout float nearest,
-                             inout vec3 albedo, inout vec3 normal) {
+                             inout vec3 albedo, inout vec3 normal, inout playerEquipmentHit equipmentHit) {
     if (playerVerticesSSBO.equipmentOverflow != 0u) return;
     uint count = min(playerVerticesSSBO.equipmentCount, uint(PLAYER_EQUIPMENT_CAPACITY));
     if (count == 0u) return;
@@ -75,10 +75,19 @@ void rayTracePlayerEquipment(vec3 origin, vec3 direction, inout float nearest,
     }
     if (hitIndex < uint(PLAYER_EQUIPMENT_CAPACITY)) {
         playerEquipmentTriangle triangle = playerVerticesSSBO.equipmentTriangles[hitIndex];
-        vec3 tint = hitBarycentrics.x * unpackUnorm4x8(triangle.vertexColors.x).rgb
-                  + hitBarycentrics.y * unpackUnorm4x8(triangle.vertexColors.y).rgb
-                  + hitBarycentrics.z * unpackUnorm4x8(triangle.vertexColors.z).rgb;
-        albedo = hitTexelColor * tint;
+        vec4 tint = hitBarycentrics.x * unpackUnorm4x8(triangle.vertexColors.x)
+                  + hitBarycentrics.y * unpackUnorm4x8(triangle.vertexColors.y)
+                  + hitBarycentrics.z * unpackUnorm4x8(triangle.vertexColors.z);
+        albedo = hitTexelColor * tint.rgb;
+        equipmentHit.material = int(triangle.tileUVs.w >> 16u);
+        equipmentHit.position = origin + nearest * direction;
+        equipmentHit.tileSize = vec2(triangle.tileUVs.w & 255u, (triangle.tileUVs.w >> 8u) & 255u);
+        vec2 uv = hitBarycentrics.x * unpackUnorm2x16(triangle.tileUVs.x)
+                + hitBarycentrics.y * unpackUnorm2x16(triangle.tileUVs.y)
+                + hitBarycentrics.z * unpackUnorm2x16(triangle.tileUVs.z);
+        vec2 texel = clamp(floor(uv * equipmentHit.tileSize), vec2(0.0), equipmentHit.tileSize - 1.0);
+        equipmentHit.texCoord = (vec2(getEquipmentTileOrigin(hitIndex)) + texel + 0.5) / vec2(textureSize(playerEquipment_sampler, 0));
+        equipmentHit.tint = tint;
         normal = normalize(hitNormal);
         if (dot(normal, direction) > 0.0) normal = -normal;
     }

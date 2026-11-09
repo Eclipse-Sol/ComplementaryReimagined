@@ -75,7 +75,7 @@ void capturePlayerEquipment() {
     playerVerticesSSBO.equipmentPlanes[slot] = vec4(n, dot(n, p0));
     triangle.barycentricU = vec4(rowU, -dot(rowU, p0));
     triangle.barycentricV = vec4(rowV, -dot(rowV, p0));
-    triangle.tileUVs = uvec4(tileUVs, uint(tileSize.x) | (uint(tileSize.y) << 8u));
+    triangle.tileUVs = uvec4(tileUVs, uint(tileSize.x) | (uint(tileSize.y) << 8u) | (uint(currentRenderedItemId) << 16u));
     triangle.vertexColors = uvec4(packUnorm4x8(playerShadowColor[0]),
                                   packUnorm4x8(playerShadowColor[1]),
                                   packUnorm4x8(playerShadowColor[2]), uint(max(playerShadowVertexID[0], max(playerShadowVertexID[1], playerShadowVertexID[2]))));

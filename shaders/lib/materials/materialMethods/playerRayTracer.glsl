@@ -63,11 +63,20 @@ void CheckQuadAt(int i, vec3 playerPos, vec3 rayDir, inout vec3 albedo, inout fl
     }
 }
 
+struct playerEquipmentHit {
+    int material;
+    vec3 position;
+    vec2 texCoord;
+    vec2 tileSize;
+    vec4 tint;
+};
+
 #ifdef WSR_PLAYER_EQUIPMENT
     #include "/lib/materials/materialMethods/playerEquipmentRayTracer.glsl"
 #endif
 
-bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 albedo, out vec3 normal) {
+bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 albedo, out vec3 normal, out playerEquipmentHit equipmentHit) {
+    equipmentHit.material = 0;
     float tMin = wsrTraceLength;
     vec3 aabbPos = playerPos * 1000.0;
     #ifdef WSR_PLAYER_EQUIPMENT
@@ -114,7 +123,7 @@ bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 
     }
 
     #ifdef WSR_PLAYER_EQUIPMENT
-        rayTracePlayerEquipment(playerPos, rayDir, tMin, albedo, normal);
+        rayTracePlayerEquipment(playerPos, rayDir, tMin, albedo, normal, equipmentHit);
     #endif
 
     return tMin < wsrTraceLength;
