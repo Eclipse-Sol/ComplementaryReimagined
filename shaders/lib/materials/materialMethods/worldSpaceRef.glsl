@@ -42,7 +42,7 @@
 #ifdef LIGHT_COLOR_MULTS
     #include "/lib/colors/colorMultipliers.glsl"
 #endif
-#ifdef MOON_PHASE_INF_LIGHT
+#if defined MOON_PHASE_INF_LIGHT || defined MOON_PHASE_INF_REFLECTION
     #include "/lib/colors/moonPhaseInfluence.glsl"
 #endif
 
@@ -284,12 +284,17 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
                 #include "/lib/materials/materialHandling/terrainIPBR.glsl"
             #undef DURING_WORLDSPACE_REF
         #else
-            if (mat == 10009) { // Leaves
+            if (mat == 10009 || mat == 10011) { // Leaves
                 #include "/lib/materials/specificMaterials/terrain/leaves.glsl"
+            } else if (mat == 10005 || mat == 10017 || mat == 10021) { // Foliage
+                subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
+            } else if (mat == 11009) { // Vine, Pale Hanging Moss
+                subsurfaceMode = 3, noSmoothLighting = true;
             }
         #endif
 
-        float NdotL = dot(normal, mat3(gbufferModelViewInverse) * lightVec);
+        vec3 worldLightVec = mat3(gbufferModelViewInverse) * lightVec;
+        float NdotL = dot(normal, worldLightVec);
         #ifdef SIDE_SHADOWING
             float lightingNdotL = max0(NdotL + 0.4) * 0.714;
 
@@ -299,18 +304,74 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         #else
             float lightingNdotL = max0(NdotL);
         #endif
+        if (subsurfaceMode != 0) lightingNdotL = 1.0;
+        vec3 lightHighlight = vec3(0.0);
 
         #ifndef NETHER
             vec3 shadow = shadowMult;
             if (lightingNdotL > 0.0001) {
                 float shadowLength = shadowDistance * 0.9166667 - length(playerPos); //consistent08JJ622
+                float lightmapYM = smoothstep1(faceData.lightmap.y);
+                float subsurfaceHighlight = 0.0;
+                vec3 subsurfaceShadowFallback = shadowMult;
+                if (subsurfaceMode != 0) {
+                    #ifdef OVERWORLD
+                        float skyLightShadowMult = pow2(pow2(pow2(faceData.lightmap.y)));
+                        float shadowMixerM = pow2(clamp01(shadowLength / 16.0));
+                        if (subsurfaceMode == 1) skyLightShadowMult *= mix(0.6 + 0.3 * pow2(noonFactor), 1.0, shadowMixerM);
+                        else skyLightShadowMult *= mix(NdotL * 0.4999 + 0.5, 1.0, shadowMixerM);
+                        subsurfaceShadowFallback *= skyLightShadowMult;
+                    #endif
+                    shadow = subsurfaceShadowFallback;
+                }
                 if (shadowLength > 0.000001) {
                     float distanceBias = 0.12 + 0.0008 * pow(dot(playerPos, playerPos), 0.75);
                     vec3 bias = normal * distanceBias * (2.0 - 0.95 * max0(NdotL));
+                    vec3 shadowPlayerPos = playerPos;
+                    if (subsurfaceMode == 1) {
+                        #ifdef OVERWORLD
+                            vec3 center = floor(playerPos + cameraPosition + normal * 0.01) - cameraPosition + 0.5;
+                            shadowPlayerPos = mix(center, playerPos, 0.5 + 0.5 * lightmapYM);
+                        #endif
+                    } else {
+                        if (subsurfaceMode == 2) {
+                            bias *= vec3(0.0, 0.0, -0.5);
+                            bias.z += 0.25 * (localTexCoord.x * 2.0 - 1.0) * NdotE;
+                        }
+                        shadowPlayerPos += bias;
+                    }
+                    vec3 shadowPos = GetShadowPos(shadowPlayerPos);
+                    float shadowOffset = offset;
+                    bool leaves = subsurfaceMode == 2;
+                    if (subsurfaceMode == 1 || leaves) {
+                        shadowOffset = 0.0005235 * lightmapYM + 0.0009765;
+                        if (leaves) {
+                            shadowPos.z -= 0.000175 * lightmapYM;
+                            #ifndef SHADOW_FILTERING
+                                lightingNdotL = mix(NdotL, lightingNdotL, 0.5);
+                            #endif
+                        } else {
+                            shadowPos.z -= max0(NdotL * 0.0001) * lightmapYM;
+                            #ifndef SHADOW_FILTERING
+                                shadowPos.z -= 0.0002;
+                            #endif
+                        }
+                        // The reflected ray replaces the camera view direction used by terrain SSS
+                        float VdotL = dot(rayDir, worldLightVec);
+                        subsurfaceHighlight = pow(max0(VdotL), 10.0) * float(isEyeInWater == 0) * (leaves ? 0.6 : 0.8);
+                    }
                     int shadowSamples = 2;
 
-                    shadow = GetShadow(GetShadowPos(playerPos + bias), faceData.lightmap.y, offset, shadowSamples, false, playerPos);
+                    shadow = GetShadow(shadowPos, faceData.lightmap.y, shadowOffset, shadowSamples, leaves, playerPos);
+                    if (subsurfaceMode != 0) {
+                        float shadowMixer = clamp01(shadowLength / 16.0);
+                        shadow = mix(subsurfaceShadowFallback, shadow * shadowMult, shadowMixer);
+                        subsurfaceHighlight *= shadowMixer;
+                    }
                 }
+                #ifdef LIGHT_HIGHLIGHT
+                    lightHighlight = shadow * (max0(lightingNdotL * shadowTime) * subsurfaceHighlight);
+                #endif
             }
             shadow *= dot(shadow, vec3(0.33333));
         #else
@@ -318,7 +379,9 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         #endif
 
         #ifdef CLOUD_SHADOWS
-            shadow *= GetCloudShadow(playerPos);
+            float cloudShadow = GetCloudShadow(playerPos);
+            shadow *= cloudShadow;
+            lightHighlight *= cloudShadow;
         #endif
 
         faceData.lightmap = pow2(pow2(faceData.lightmap));
@@ -377,7 +440,17 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         vec3 lighting = sceneLighting + specialLighting * XLIGHT_I + minLighting;
         lighting = lighting * AO * directionalShading + emission * 0.8;
 
-        return vec4(color.rgb * lighting + maRecolor, GetReflectionVolumeFade(playerPos));
+        #ifdef LIGHT_HIGHLIGHT
+            lightHighlight *= normalize(pow(lightColor, vec3(0.37))) * (0.3 + 1.5 * sunVisibility2) * (1.0 - 0.85 * rainFactor);
+            #ifdef LIGHT_COLOR_MULTS
+                lightHighlight *= lightColorMult;
+            #endif
+            #ifdef MOON_PHASE_INF_REFLECTION
+                lightHighlight *= pow2(moonPhaseInfluence);
+            #endif
+        #endif
+
+        return vec4(color.rgb * lighting + lightHighlight + maRecolor, GetReflectionVolumeFade(playerPos));
     #endif
 }
 
