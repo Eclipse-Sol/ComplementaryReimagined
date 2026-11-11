@@ -324,7 +324,7 @@ void main() {
     #else
         int rawMat = int(mc_Entity.x + 0.5);
     #endif
-    mat = getReflectionMaterial(rawMat);
+    mat = GetReflectionMaterial(rawMat);
 
     position = shadowModelViewInverse * shadowProjectionInverse * ftransform();
 
@@ -359,10 +359,10 @@ void main() {
 
     #if COLORED_LIGHTING_INTERNAL > 0
         #ifdef WSR_TERRAIN_CAPTURE
-            bool reflectionRefresh = isReflectionTerrainStage() && isReflectionVoxelRefreshDue();
+            bool reflectionRefresh = IsReflectionTerrainStage();
             if (reflectionRefresh && mat == 10068) UpdateLavaHeightMap();
             #if WORLD_SPACE_SHAPES > 0
-                if (reflectionRefresh && getReflectionShapeFamily(rawMat) > 0)
+                if (reflectionRefresh && GetReflectionShapeFamily(rawMat) > 0)
                     UpdateReflectionShape(rawMat, at_tangent);
             #endif
         #endif
@@ -374,7 +374,7 @@ void main() {
             #endif
             #ifdef WSR_TERRAIN_CAPTURE
                 vec3 normal = mat3(shadowModelViewInverse) * gl_NormalMatrix * gl_Normal;
-                if (reflectionRefresh && (getReflectionShapeFamily(rawMat) == 0 || WORLD_SPACE_SHAPES <= 0))
+                if (reflectionRefresh && (GetReflectionShapeFamily(rawMat) == 0 || WORLD_SPACE_SHAPES <= 0))
                     UpdateSceneVoxelMap(rawMat, normal, position.xyz);
             #endif
         }

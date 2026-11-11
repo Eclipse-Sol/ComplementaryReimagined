@@ -1,7 +1,7 @@
 #ifndef MODEL_TABLE_SHAPES
 #define MODEL_TABLE_SHAPES
 
-int getModelTableShapePartCount(int family, int model) {
+int GetModelTableShapePartCount(int family, int model) {
     if (family == WSR_FAMILY_MODEL_CUBOID) return model <= 7 ? 1 : 0;
     if (family == WSR_FAMILY_MODEL_ROD) return model <= 1 ? 2 : 0;
     if (family == WSR_FAMILY_MODEL_FENCE_GATE) return model == 0 ? 8 : 0;
@@ -13,7 +13,7 @@ int getModelTableShapePartCount(int family, int model) {
     return 0;
 }
 
-void rotateModelTableShapeY(int turn, inout vec3 lower, inout vec3 upper) {
+void RotateModelTableShapeY(int turn, inout vec3 lower, inout vec3 upper) {
     vec3 lo = lower, hi = upper;
     if (turn == 1) {
         lower.xz = vec2(16.0 - hi.z, lo.x);
@@ -29,7 +29,7 @@ void rotateModelTableShapeY(int turn, inout vec3 lower, inout vec3 upper) {
     }
 }
 
-bool getModelTableShapeBox(int family, int model, uint state, int part, out vec3 boxMin, out vec3 boxMax) {
+bool GetModelTableShapeBox(int family, int model, uint state, int part, out vec3 boxMin, out vec3 boxMax) {
     if (family == WSR_FAMILY_MODEL_CUBOID) {
         if (model == 0) {
             boxMin = vec3(7, 0, 7);
@@ -153,7 +153,7 @@ bool getModelTableShapeBox(int family, int model, uint state, int part, out vec3
         int turn = (state & 2u) != 0u ? 1
                  : ((state & 4u) != 0u ? 2
                  : ((state & 8u) != 0u ? 3 : 0));
-        rotateModelTableShapeY(turn, boxMin, boxMax);
+        RotateModelTableShapeY(turn, boxMin, boxMax);
     } else return false;
     boxMin *= 0.0625;
     boxMax *= 0.0625;

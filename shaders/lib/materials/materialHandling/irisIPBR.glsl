@@ -1,4 +1,4 @@
-int mat = getReflectionMaterial(currentRenderedItemId);
+int mat = GetReflectionMaterial(currentRenderedItemId);
 
 #ifdef GBUFFERS_HAND
     float lViewPos = 0.0;

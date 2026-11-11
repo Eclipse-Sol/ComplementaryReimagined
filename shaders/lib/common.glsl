@@ -31,6 +31,7 @@
     #define COLORED_LIGHTING 0 //[128 192 256 384 512 768 1024]
     #define WORLD_SPACE_REFLECTIONS -1 //[-1 1]
     #define WORLD_SPACE_SHAPES 1 //[-1 1]
+    #define WSR_REBUILD_PERCENT 12.5 //[5.0 10.0 12.5 25.0 50.0 100.0]
 
     #include "/lib/voxelization/reflectionShapeDefinitions.glsl"
     #if defined IRIS_FEATURE_CUSTOM_IMAGES && SHADOW_QUALITY > -1 && !defined MC_OS_MAC && !(defined DH_TERRAIN || defined DH_WATER || defined VOXY_PATCH)

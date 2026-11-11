@@ -1,31 +1,35 @@
-uint getShapeSurfaceHead(ivec3 cell) {
-    return readShapeHead(getSceneVoxelIndex(cell));
+uint GetShapeRecordHead(reflectionCellHandle cell) {
+    return ReadShapeHead(cell);
 }
 
-ivec3 getShapeSurfaceOwner(shapeSurface surface, ivec3 cell) {
+ivec3 GetShapeOwnerCell(shapeRecord surface, ivec3 cell, ivec3 storageOrigin) {
     if ((surface.shading.w & shapeFlagCompactLink) != 0u) return cell;
-    return getShapeVoxelPosition(surface.shading.w & shapeVoxelIndexMask);
+    ivec3 owner = GetSceneVoxelPosition(surface.shading.w & shapeVoxelIndexMask, storageOrigin);
+    ivec3 delta = owner - cell;
+    owner -= ivec3(greaterThan(delta, sceneVoxelVolumeSize / 2)) * sceneVoxelVolumeSize;
+    owner += ivec3(lessThan(delta, -sceneVoxelVolumeSize / 2)) * sceneVoxelVolumeSize;
+    return owner;
 }
 
-void getShapePlaneBasis(uint flags, uint codeU, uint codeV, out vec3 axisU, out vec3 axisV, out vec3 normal) {
-    if (isShapeTiltedBasis(codeU, codeV)) {
-        axisU = getShapeDiagonalVector(int(codeU));
-        axisV = vec3(0.0, getShapeCodeSign(codeV), 0.0);
+void GetShapePlaneBasis(uint flags, uint codeU, uint codeV, out vec3 axisU, out vec3 axisV, out vec3 normal) {
+    if (IsShapeTiltedBasis(codeU, codeV)) {
+        axisU = GetShapeDiagonalVector(int(codeU));
+        axisV = vec3(0.0, GetShapeCodeSign(codeV), 0.0);
         normal = vec3(-axisU.z * axisV.y, 0.0, axisU.x * axisV.y);
         if ((flags & shapeFlagTiltedFlip) != 0u) normal = -normal;
     } else {
-        uint face = getShapeFaceCode(flags);
-        axisU = getShapePlaneVector(int(codeU));
-        axisV = getShapePlaneVector(int(codeV));
+        uint face = GetShapeFaceCode(flags);
+        axisU = GetShapePlaneVector(int(codeU));
+        axisV = GetShapePlaneVector(int(codeV));
         normal = normalize(cross(axisU, axisV));
-        if (normal[face >> 1u] * getShapeCodeSign(face) < 0.0) normal = -normal;
+        if (normal[face >> 1u] * GetShapeCodeSign(face) < 0.0) normal = -normal;
     }
 }
 
-bool reflectionSurfaceHasAlpha(shapeSurface surface, vec2 offset, vec3 u, vec3 v, vec3 normal,
+bool ReflectionSurfaceHasAlpha(shapeRecord surface, vec2 offset, vec3 u, vec3 v, vec3 normal,
                                vec3 rayDir, float denominator, float distance, sampler2D atlas,
                                vec3 positionGradX, vec3 positionGradY, vec3 gradientStepX, vec3 gradientStepY) {
-    vec2 anchorUV = getShapeRawUV(surface.shading.x) / 65536.0;
+    vec2 anchorUV = GetShapeRawUV(surface.shading.x) / 65536.0;
     vec2 scale = unpackHalf2x16(surface.mapping.w);
     vec2 uv = anchorUV + scale * offset;
     vec3 gradX = positionGradX + max(0.0, distance) * gradientStepX;

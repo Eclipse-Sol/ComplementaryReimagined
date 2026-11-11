@@ -18,20 +18,23 @@ const ivec3 workGroups = ivec3(8192, 1, 1);
 
 void main() {
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0
-        uint count = min(shapeDataSSBO.count, shapeSurfaceCapacity);
+        uint capturedRecordCount = GetCapturedShapeRecordCount();
+        uint haloRecordCount = shapeDataSSBO.haloRecordCount;
         #ifdef SHAPE_RESOLVE
             if (gl_GlobalInvocationID.x == 0u) {
-                shapeDataSSBO.resolvedCount = count;
+                shapeDataSSBO.frozenRecordCount = capturedRecordCount;
+                shapeDataSSBO.frozenHaloRecordCount = haloRecordCount;
                 #ifdef WSR_PLAYER_EQUIPMENT
                     mergePlayerBounds();
                 #endif
             }
         #endif
         #ifdef SHAPE_SCATTER
-            count = shapeDataSSBO.resolvedCount;
+            capturedRecordCount = shapeDataSSBO.frozenRecordCount;
+            haloRecordCount = shapeDataSSBO.frozenHaloRecordCount;
         #endif
         uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
-        for (uint index = gl_GlobalInvocationID.x; index < count; index += stride)
-            BuildReflectionShapeSurface(index);
+        for (uint index = gl_GlobalInvocationID.x; index < capturedRecordCount + haloRecordCount; index += stride)
+            BuildReflectionShapeSurface(GetShapeBuildInputIndex(index, capturedRecordCount), index >= capturedRecordCount);
     #endif
 }

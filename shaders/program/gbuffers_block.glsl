@@ -103,7 +103,7 @@ float shadowTime = shadowTimeVar2 * shadowTimeVar2;
 
 //Program//
 void main() {
-    int blockEntityMat = getReflectionMaterial(blockEntityId);
+    int blockEntityMat = GetReflectionMaterial(blockEntityId);
     vec4 color = texture2D(tex, texCoord);
     #ifdef GENERATED_NORMALS
         vec3 colorP = color.rgb;
@@ -263,7 +263,7 @@ out vec4 glColor;
 
 //Program//
 void main() {
-    int blockEntityMat = getReflectionMaterial(blockEntityId);
+    int blockEntityMat = GetReflectionMaterial(blockEntityId);
     gl_Position = ftransform();
     #ifdef TAA
         gl_Position.xy = TAAJitter(gl_Position.xy, gl_Position.w);

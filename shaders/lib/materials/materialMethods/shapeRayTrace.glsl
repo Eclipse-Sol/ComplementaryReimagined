@@ -1,7 +1,7 @@
 #include "/lib/materials/materialMethods/sharedShapeModels.glsl"
 
-bool getReflectionShapeBox(int family, int model, uint state, int part, out vec3 boxMin, out vec3 boxMax) {
-    if (family >= WSR_FAMILY_FIRST_MODEL) return getModelTableShapeBox(family, model, state, part, boxMin, boxMax);
+bool GetReflectionShapeBox(int family, int model, uint state, int part, out vec3 boxMin, out vec3 boxMax) {
+    if (family >= WSR_FAMILY_FIRST_MODEL) return GetModelTableShapeBox(family, model, state, part, boxMin, boxMax);
     if (family >= WSR_FAMILY_FIRST_BOX) {
         if (family == WSR_FAMILY_LAYERED || family == WSR_FAMILY_PRESSURE_PLATE) {
             float height = float(state & 63u) / 32.0;
@@ -126,21 +126,21 @@ bool getReflectionShapeBox(int family, int model, uint state, int part, out vec3
     return false;
 }
 
-float intersectReflectionShapeBoxes(vec3 origin, vec3 rayDir, int family, int model, uint state, float maxDist, out vec3 normal) {
+float IntersectReflectionShapeBoxes(vec3 origin, vec3 rayDir, int family, int model, uint state, float maxDist, out vec3 normal) {
     if ((state & 2048u) == 0u) return -1.0;
     bvec3 parallel = lessThan(abs(rayDir), vec3(1e-8));
     vec3 inverseDir = 1.0 / mix(rayDir, vec3(1.0), parallel);
     vec3 enterNormal = -sign(rayDir);
     float nearest = maxDist + 1.0;
     float faceTolerance = family == WSR_FAMILY_MODEL_CUBOID && model >= 5 ? 0.0001 : 0.0;
-    int partCount = family >= WSR_FAMILY_FIRST_MODEL ? getModelTableShapePartCount(family, model)
+    int partCount = family >= WSR_FAMILY_FIRST_MODEL ? GetModelTableShapePartCount(family, model)
                   : (family >= WSR_FAMILY_FIRST_BOX ? 1
                   : (family == WSR_FAMILY_SLAB_STAIR ? 4
                   : (family == WSR_FAMILY_WALL ? 5
                   : (family == WSR_FAMILY_CHORUS ? 7 : 9))));
     for (int part = 0; part < partCount; part++) {
         vec3 boxMin, boxMax;
-        if (!getReflectionShapeBox(family, model, state, part, boxMin, boxMax)) continue;
+        if (!GetReflectionShapeBox(family, model, state, part, boxMin, boxMax)) continue;
         if (any(bvec3(parallel.x && (origin.x < boxMin.x - faceTolerance || origin.x > boxMax.x + faceTolerance),
                       parallel.y && (origin.y < boxMin.y - faceTolerance || origin.y > boxMax.y + faceTolerance),
                       parallel.z && (origin.z < boxMin.z - faceTolerance || origin.z > boxMax.z + faceTolerance)))) continue;
@@ -163,59 +163,59 @@ float intersectReflectionShapeBoxes(vec3 origin, vec3 rayDir, int family, int mo
     return nearest <= maxDist ? nearest : -1.0;
 }
 
-uint selectReflectionShapeSurface(ivec3 cell, vec3 local, vec3 normal) {
-    uint head = getShapeSurfaceHead(cell);
-    uint selected = shapeSurfaceCapacity;
+uint SelectShapeRecord(vec3 local, vec3 normal, reflectionCellHandle cellRef) {
+    uint head = GetShapeRecordHead(cellRef);
+    uint selected = shapeRecordCapacity;
     float bestScore = -1e10;
     uint tieBreak = 0xffffffffu;
-    int wantedFace = getShapeFaceIndex(normal);
+    int wantedFace = GetReflectionFaceIndex(normal);
     int normalAxis = wantedFace >> 1;
     bool matchingFaces = false;
     uint candidate = head;
     uint wantedFlags = shapeFlagResolved | (uint(wantedFace) << 24u);
-    for (int i = 0; i < 128 && candidate > 0u && candidate <= shapeSurfaceCapacity; i++) {
-        if ((shapeDataSSBO.surfaces[candidate - 1u].shading.w & (shapeFlagPlane | shapeFlagResolved | shapeFaceMask)) == wantedFlags) {
+    for (int i = 0; i < 128 && candidate > 0u && candidate <= shapeRecordCapacity; i++) {
+        if ((shapeDataSSBO.records[candidate - 1u].shading.w & (shapeFlagPlane | shapeFlagResolved | shapeFaceMask)) == wantedFlags) {
             head = candidate;
             matchingFaces = true;
             break;
         }
-        candidate = getShapeNext(shapeDataSSBO.surfaces[candidate - 1u]);
+        candidate = GetNextShapeRecord(shapeDataSSBO.records[candidate - 1u]);
     }
-    for (int i = 0; i < 128 && head > 0u && head <= shapeSurfaceCapacity; i++) {
+    for (int i = 0; i < 128 && head > 0u && head <= shapeRecordCapacity; i++) {
         uint index = head - 1u;
-        uvec4 mapping = shapeDataSSBO.surfaces[index].mapping;
-        uint flags = shapeDataSSBO.surfaces[index].shading.w;
-        uint link = shapeDataSSBO.surfaces[index].shading.y;
+        uvec4 mapping = shapeDataSSBO.records[index].mapping;
+        uint flags = shapeDataSSBO.records[index].shading.w;
+        uint link = shapeDataSSBO.records[index].shading.y;
         head = matchingFaces
              ? (link & 65535u) | ((mapping.z >> 28u) << 16u) | (((mapping.y >> 30u) & 1u) << 20u)
-             : getShapeCompactNext(flags, mapping.x);
-        if (!isShapeResolvedCuboid(flags)) continue;
-        vec3 delta = local - getShapeAnchor(mapping.y);
+             : GetCompactNextShapeRecord(flags, mapping.x);
+        if (!IsShapeResolvedCuboid(flags)) continue;
+        vec3 delta = local - GetShapeAnchor(mapping.y);
         uint codeU = mapping.z & 7u, codeV = (mapping.z >> 3u) & 7u;
-        vec2 offset = vec2(delta[codeU >> 1u] * getShapeCodeSign(codeU), delta[codeV >> 1u] * getShapeCodeSign(codeV));
+        vec2 offset = vec2(delta[codeU >> 1u] * GetShapeCodeSign(codeU), delta[codeV >> 1u] * GetShapeCodeSign(codeV));
         offset *= 1.0 - 2.0 * vec2((mapping.z >> 6u) & 1u, (mapping.z >> 7u) & 1u);
-        vec2 size = getShapeCuboidSize(mapping.z);
+        vec2 size = GetShapeCuboidSize(mapping.z);
         vec2 outside = max(max(-offset, offset - size), vec2(0.0));
         float score = (matchingFaces ? 8.0 : 0.0) - 4.0 * abs(delta[normalAxis]) - outside.x - outside.y;
-        if (score > bestScore + 0.0001 || abs(score - bestScore) <= 0.0001 && shapeDataSSBO.surfaces[index].shading.x < tieBreak) {
+        if (score > bestScore + 0.0001 || abs(score - bestScore) <= 0.0001 && shapeDataSSBO.records[index].shading.x < tieBreak) {
             bestScore = score;
             selected = index;
-            tieBreak = shapeDataSSBO.surfaces[index].shading.x;
+            tieBreak = shapeDataSSBO.records[index].shading.x;
         }
     }
     return selected;
 }
 
-bool getReflectionShapeSurface(uint selected, vec3 local, vec2 atlasSize,
+bool UnpackShapeSurface(uint selected, vec3 local, vec2 atlasSize,
                                out faceData face, out vec2 localUV, out uint axes, out vec2 axisScale) {
-    if (selected >= shapeSurfaceCapacity) return false;
-    shapeSurface surface = shapeDataSSBO.surfaces[selected];
+    if (selected >= shapeRecordCapacity) return false;
+    shapeRecord surface = shapeDataSSBO.records[selected];
     uvec3 data = surface.shading.xyz;
-    vec2 anchorUV = getShapeRawUV(data.x) / 65536.0;
+    vec2 anchorUV = GetShapeRawUV(data.x) / 65536.0;
     bool plane = (surface.shading.w & shapeFlagPlane) != 0u;
-    vec3 anchor = getShapeSurfaceAnchor(surface);
-    vec3 axisU = plane ? getShapePlaneVector(int(surface.mapping.z & 63u)) : getShapeFaceNormal(int(surface.mapping.z & 7u));
-    vec3 axisV = plane ? getShapePlaneVector(int((surface.mapping.z >> 6u) & 63u)) : getShapeFaceNormal(int((surface.mapping.z >> 3u) & 7u));
+    vec3 anchor = GetShapeRecordAnchor(surface);
+    vec3 axisU = plane ? GetShapePlaneVector(int(surface.mapping.z & 63u)) : GetShapeFaceNormal(int(surface.mapping.z & 7u));
+    vec3 axisV = plane ? GetShapePlaneVector(int((surface.mapping.z >> 6u) & 63u)) : GetShapeFaceNormal(int((surface.mapping.z >> 3u) & 7u));
     vec2 scale = unpackHalf2x16(surface.mapping.w);
     if (min(scale.x, scale.y) < 1e-7) return false;
     float pixels = max(1.0, round(dot(scale * atlasSize, vec2(0.5))));
@@ -224,28 +224,28 @@ bool getReflectionShapeSurface(uint selected, vec3 local, vec2 atlasSize,
     vec2 cornerSign = 2.0 * vec2((surface.mapping.z >> cornerShift) & 1u, (surface.mapping.z >> (cornerShift + 1u)) & 1u) - 1.0;
     vec2 tileOrigin = floor((anchorUV * atlasSize - 0.25 * cornerSign) / pixels) * tileScale;
     if (plane) {
-        vec2 span = getShapePlaneSize(surface) * scale;
+        vec2 span = GetShapePlaneSize(surface) * scale;
         tileScale = vec2(max(1.0, max(span.x * atlasSize.x, span.y * atlasSize.y))) / atlasSize;
         tileOrigin = anchorUV - (0.5 + 0.5 * cornerSign) * span;
     }
     axisScale = scale / tileScale;
     axes = plane ? 4096u | (surface.mapping.z & 4095u) : surface.mapping.z & 63u;
     vec2 offset = vec2(dot(local - anchor, axisU), dot(local - anchor, axisV));
-    if (!plane) offset = -cornerSign * clamp(-cornerSign * offset, vec2(0.0), getShapeCuboidSize(surface.mapping.z));
+    if (!plane) offset = -cornerSign * clamp(-cornerSign * offset, vec2(0.0), GetShapeCuboidSize(surface.mapping.z));
     localUV = (anchorUV - tileOrigin) / tileScale + axisScale * offset;
-    face = faceData(unpackUnorm4x8(data.z).xyz, unpackFaceLightmap(data), vec3(tileOrigin, 0.5 * tileScale.x));
+    face = faceData(unpackUnorm4x8(data.z).xyz, UnpackFaceLightmap(data), vec3(tileOrigin, 0.5 * tileScale.x));
     return true;
 }
 
-float getReflectionShapeAO(uint selected, vec3 local) {
-    shapeSurface surface = shapeDataSSBO.surfaces[selected];
+float GetReflectionShapeAO(uint selected, vec3 local) {
+    shapeRecord surface = shapeDataSSBO.records[selected];
     bool plane = (surface.shading.w & shapeFlagPlane) != 0u;
-    vec3 axisU = plane ? getShapePlaneVector(int(surface.mapping.z & 63u)) : getShapeFaceNormal(int(surface.mapping.z & 7u));
-    vec3 axisV = plane ? getShapePlaneVector(int((surface.mapping.z >> 6u) & 63u)) : getShapeFaceNormal(int((surface.mapping.z >> 3u) & 7u));
+    vec3 axisU = plane ? GetShapePlaneVector(int(surface.mapping.z & 63u)) : GetShapeFaceNormal(int(surface.mapping.z & 7u));
+    vec3 axisV = plane ? GetShapePlaneVector(int((surface.mapping.z >> 6u) & 63u)) : GetShapeFaceNormal(int((surface.mapping.z >> 3u) & 7u));
     uint shift = plane ? 12u : 6u;
     vec2 corner = vec2((surface.mapping.z >> shift) & 1u, (surface.mapping.z >> (shift + 1u)) & 1u);
-    vec2 size = plane ? getShapePlaneSize(surface) : getShapeCuboidSize(surface.mapping.z);
-    vec3 delta = local - getShapeSurfaceAnchor(surface);
+    vec2 size = plane ? GetShapePlaneSize(surface) : GetShapeCuboidSize(surface.mapping.z);
+    vec3 delta = local - GetShapeRecordAnchor(surface);
     vec2 uv = clamp(corner + vec2(dot(delta, axisU), dot(delta, axisV)) / max(size, vec2(0.0001)), 0.0, 1.0);
     vec4 ao = unpackUnorm4x8(shapeAOSSBO.corners[selected]); // 00,10,01,11
     if (corner.x == corner.y) {

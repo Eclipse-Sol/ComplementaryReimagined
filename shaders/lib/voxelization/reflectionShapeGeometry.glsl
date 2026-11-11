@@ -1,6 +1,6 @@
 #include "/lib/voxelization/reflectionFaceGeometry.glsl"
 
-// shapeSurface.shading.w flags
+// shapeRecord.shading.w flags
 const uint shapeFaceMask = 0x07000000u;
 const uint shapeFlagSecondary = 1u << 27u;
 const uint shapeFlagResolved = 1u << 28u;
@@ -11,27 +11,27 @@ const uint shapeFlagCompactLink = 1u << 31u;
 const uint shapeKindMask = 0x78000000u;
 const uint shapeKindBounds = 0x68000000u;
 
-uint getShapeFaceCode(uint flags) {
+uint GetShapeFaceCode(uint flags) {
     return (flags >> 24u) & 7u;
 }
 
-float getShapeCodeSign(uint code) {
+float GetShapeCodeSign(uint code) {
     return (code & 1u) != 0u ? 1.0 : -1.0;
 }
 
-bool isShapeTiltedBasis(uint codeU, uint codeV) {
+bool IsShapeTiltedBasis(uint codeU, uint codeV) {
     return codeU >= 6u && codeU < 10u && (codeV & ~1u) == 2u;
 }
 
-bool isShapeAxisBasis(uint codeU, uint codeV, uint normalAxis) {
+bool IsShapeAxisBasis(uint codeU, uint codeV, uint normalAxis) {
     return ((1u << (codeU >> 1u)) | (1u << (codeV >> 1u)) | (1u << normalAxis)) == 7u;
 }
 
-vec2 getShapeRawUV(uint packedUV) {
+vec2 GetShapeRawUV(uint packedUV) {
     return vec2(packedUV >> 16u, packedUV & 65535u);
 }
 
-bool isShapeBoundsRecord(uint flags) {
+bool IsShapeBoundsRecord(uint flags) {
     return (flags & shapeKindMask) == shapeKindBounds;
 }
 
@@ -39,27 +39,27 @@ const uint shapeFlagsMask = 0xff000000u;
 const uint shapeVoxelIndexMask = 0xffffffu;
 const uint shapeMappingSegmentEndpoint = 0x80000000u;
 
-bool isShapeSecondaryPlane(uint flags) {
+bool IsShapeSecondaryPlane(uint flags) {
     return (flags & (shapeFlagSecondary | shapeFlagPlane)) == (shapeFlagSecondary | shapeFlagPlane);
 }
 
-bool isShapeResolvedPrimary(uint flags) {
+bool IsShapeResolvedPrimary(uint flags) {
     return (flags & (shapeFlagSecondary | shapeFlagResolved)) == shapeFlagResolved;
 }
 
-bool isShapeResolvedCuboid(uint flags) {
+bool IsShapeResolvedCuboid(uint flags) {
     return (flags & (shapeFlagResolved | shapeFlagPlane)) == shapeFlagResolved;
 }
 
-bool isShapeResolvedPlane(uint flags) {
+bool IsShapeResolvedPlane(uint flags) {
     return (flags & (shapeFlagSecondary | shapeFlagResolved | shapeFlagPlane)) == (shapeFlagResolved | shapeFlagPlane);
 }
 
-bool isShapeUnresolvedSecondaryPlane(uint flags) {
+bool IsShapeUnresolvedSecondaryPlane(uint flags) {
     return (flags & (shapeFlagSecondary | shapeFlagResolved | shapeFlagPlane)) == (shapeFlagSecondary | shapeFlagPlane);
 }
 
-uint computeModelTableShapeState(int family, int model, vec3 local) {
+uint ComputeModelTableShapeState(int family, int model, vec3 local) {
     if (family == WSR_FAMILY_MODEL_TURTLE_EGG) {
         vec2 p = local.xz * 16.0;
         uint bits = 0u;
@@ -110,21 +110,17 @@ uint computeModelTableShapeState(int family, int model, vec3 local) {
     return 0u;
 }
 
-int getShapeFaceIndex(vec3 direction) {
-    return getReflectionFaceIndex(direction);
-}
-
-vec3 getShapeFaceNormal(int axis) {
+vec3 GetShapeFaceNormal(int axis) {
     vec3 result = vec3(0.0);
     result[axis / 2] = axis % 2 == 1 ? 1.0 : -1.0;
     return result;
 }
 
-int getShapePlaneCode(vec3 direction) {
+int GetShapePlaneCode(vec3 direction) {
     vec3 a = abs(direction);
     int zeroAxis = a.x < a.y && a.x < a.z ? 0 : (a.y < a.z ? 1 : 2);
     int u = (zeroAxis + 1) % 3, v = (zeroAxis + 2) % 3;
-    if (min(a[u], a[v]) < 0.19509) return getShapeFaceIndex(direction);
+    if (min(a[u], a[v]) < 0.19509) return GetReflectionFaceIndex(direction);
     float ratio = a[u] / a[v];
     int angle = ratio > 1.496606 ? 0 : (ratio < 0.668179 ? 2 : 1);
     if (zeroAxis == 1 && angle == 1)
@@ -134,14 +130,14 @@ int getShapePlaneCode(vec3 direction) {
     return 32 | (kind << 2) | int(direction[u] < 0.0) | (int(direction[v] < 0.0) << 1);
 }
 
-vec3 getShapeDiagonalVector(int axis) {
+vec3 GetShapeDiagonalVector(int axis) {
     return vec3((axis & 1) == 0 ? 0.707106781 : -0.707106781, 0.0,
                 (axis == 6 || axis == 9) ? 0.707106781 : -0.707106781);
 }
 
-vec3 getShapePlaneVector(int axis) {
-    if (axis < 6) return getShapeFaceNormal(axis);
-    if (axis < 10) return getShapeDiagonalVector(axis);
+vec3 GetShapePlaneVector(int axis) {
+    if (axis < 6) return GetShapeFaceNormal(axis);
+    if (axis < 10) return GetShapeDiagonalVector(axis);
     int kind = (axis >> 2) & 7, angle = kind & 3;
     int zeroAxis = (kind & 4) >> 1;
     if (angle == 3) {

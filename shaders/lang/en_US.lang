@@ -1201,3 +1201,12 @@ option.WORLD_SPACE_SHAPES=WSR Non-Full Blocks
 option.WORLD_SPACE_SHAPES.comment=Reflects supported non-full blocks.
 value.WORLD_SPACE_SHAPES.-1=OFF
 value.WORLD_SPACE_SHAPES.1=ON
+
+option.WSR_REBUILD_PERCENT=WSR Rebuild per Frame
+option.WSR_REBUILD_PERCENT.comment=Amount of time for a full refresh of WSR block data to happen.
+value.WSR_REBUILD_PERCENT.5.0=5% (20 frames)
+value.WSR_REBUILD_PERCENT.10.0=10% (10 frames)
+value.WSR_REBUILD_PERCENT.12.5=12.5% (8 frames)
+value.WSR_REBUILD_PERCENT.25.0=25% (4 frames)
+value.WSR_REBUILD_PERCENT.50.0=50% (2 frames)
+value.WSR_REBUILD_PERCENT.100.0=100% (every frame)

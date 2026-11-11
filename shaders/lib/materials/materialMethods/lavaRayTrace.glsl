@@ -2,16 +2,16 @@
     vec2 wsrLavaGradient;
 #endif
 
-vec4 getLavaCornerHeights(ivec3 voxelPos) {
+vec4 GetLavaCornerHeights(ivec3 voxelPos) {
     return vec4(
-        getLavaCornerHeight(voxelPos),
-        getLavaCornerHeight(voxelPos + ivec3(1, 0, 0)),
-        getLavaCornerHeight(voxelPos + ivec3(0, 0, 1)),
-        getLavaCornerHeight(voxelPos + ivec3(1, 0, 1))
+        GetLavaCornerHeight(voxelPos),
+        GetLavaCornerHeight(voxelPos + ivec3(1, 0, 0)),
+        GetLavaCornerHeight(voxelPos + ivec3(0, 0, 1)),
+        GetLavaCornerHeight(voxelPos + ivec3(1, 0, 1))
     );
 }
 
-float intersectLavaSurface(vec3 localPos, vec3 rayDir, vec4 heights, float maxDist, out vec3 surfaceNormal) {
+float IntersectLavaSurface(vec3 localPos, vec3 rayDir, vec4 heights, float maxDist, out vec3 surfaceNormal) {
     vec2 slope = vec2(heights.y - heights.x, heights.z - heights.x);
     float twist = heights.x - heights.y - heights.z + heights.w;
     float height = heights.x + dot(slope, localPos.xz) + twist * localPos.x * localPos.z;

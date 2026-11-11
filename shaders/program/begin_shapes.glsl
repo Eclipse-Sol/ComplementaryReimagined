@@ -2,87 +2,95 @@
 #include "/lib/voxelization/reflectionVoxelVolume.glsl"
 #define SSBO_QUALIFIER
 #include "/lib/voxelization/SSBOs/blockDataBuffer.glsl"
-#if WORLD_SPACE_SHAPES > 0
-    #include "/lib/voxelization/SSBOs/shapeDataBuffer.glsl"
-    #include "/lib/voxelization/SSBOs/shapeHeadBuffer.glsl"
-#endif
+#include "/lib/voxelization/SSBOs/shapeDataBuffer.glsl"
+#include "/lib/voxelization/SSBOs/shapeHeadBuffer.glsl"
 
 layout(local_size_x = 256) in;
-#if WORLD_SPACE_SHAPES <= 0
-    const ivec3 workGroups = ivec3(64, 1, 1);
-#elif COLORED_LIGHTING_INTERNAL == 128
-    const ivec3 workGroups = ivec3(8, 4, 8);
-#elif COLORED_LIGHTING_INTERNAL == 192
-    const ivec3 workGroups = ivec3(12, 4, 12);
-#elif COLORED_LIGHTING_INTERNAL == 256
-    const ivec3 workGroups = ivec3(16, 4, 16);
-#elif COLORED_LIGHTING_INTERNAL == 384
-    const ivec3 workGroups = ivec3(24, 4, 24);
-#else
-    const ivec3 workGroups = ivec3(32, 4, 32);
-#endif
-#if WORLD_SPACE_SHAPES > 0
+#include "/lib/voxelization/reflectionTileDispatch.glsl"
 layout(r16ui) writeonly uniform uimage3D wsr_img;
 layout(r8ui) writeonly uniform uimage3D wsr_lod_img;
 layout(r8ui) uniform uimage3D wsr_coarse_img;
-shared bool tileOccupied;
-shared uint epoch;
-#endif
-
-shared uint reflectionPrepareEpoch;
-
-void prepareReflectionFaces(bool refresh) {
-    if (!refresh) return;
-    if (gl_LocalInvocationID.x == 0u) {
-        if (gl_WorkGroupID == uvec3(0u)) {
-            blockDataSSBO.faceCount = 0u;
-            blockDataSSBO.faceOverflow = 0u;
-            reflectionPrepareEpoch = atomicAdd(blockDataSSBO.faceEpoch, 1u) + 1u;
-        } else {
-            reflectionPrepareEpoch = atomicAdd(blockDataSSBO.faceEpoch, 0u);
-        }
-    }
-    barrier();
-    uint slice = (uint(reflectionFaceCount) + 2047u) / 2048u;
-    uint group = gl_WorkGroupID.x + gl_NumWorkGroups.x * (gl_WorkGroupID.y + gl_NumWorkGroups.y * gl_WorkGroupID.z);
-    uint stride = gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z * gl_WorkGroupSize.x;
-    for (uint step = 0u; step < 2u; step++) {
-        uint start = ((reflectionPrepareEpoch + step) & 2047u) * slice;
-        for (uint i = group * gl_WorkGroupSize.x + gl_LocalInvocationID.x; i < slice; i += stride) {
-            uint index = start + i;
-            if (index < uint(reflectionFaceCount)) blockDataSSBO.faceRefs[index] = 0u;
-        }
-    }
-}
+const uint slicesPerGroup = 16u / uint(sceneVoxelCoarseCellSize.y);
+const uint threadsPerSlice = 256u / slicesPerGroup;
+shared bool tilesToClear[slicesPerGroup];
 
 void main() {
-    if (!reflectionStorageAvailable()) return;
-    uint lane = gl_LocalInvocationID.x;
-    bool refresh = isReflectionVoxelRefreshDue();
-    ivec3 tile = ivec3(gl_WorkGroupID);
-    prepareReflectionFaces(refresh);
-    #if WORLD_SPACE_SHAPES > 0
-        // New images are undefined, so clear them until the first rebuild...
-        if (!refresh && shapeDataSSBO.epoch != 0u) return;
-        if (lane == 0u) tileOccupied = imageLoad(wsr_coarse_img, tile).r != 0u || shapeDataSSBO.epoch < 2u;
-        barrier();
-        if (tileOccupied) {
-            ivec3 base = tile * 16 + ivec3(lane & 15u, lane >> 4u, 0);
-            for (int z = 0; z < 16; z++)
-                imageStore(wsr_img, base + ivec3(0, 0, z), uvec4(0u));
-            if (lane < 64u)
-                imageStore(wsr_lod_img, tile * 4 + ivec3(lane & 3u, (lane >> 2u) & 3u, lane >> 4u), uvec4(0u));
-            if (lane == 0u) imageStore(wsr_coarse_img, tile, uvec4(0u));
+    if (!ReflectionStorageAvailable()) return;
+    uint threadIndex = gl_LocalInvocationID.x;
+    uint group = gl_WorkGroupID.x + gl_NumWorkGroups.x * (gl_WorkGroupID.y + gl_NumWorkGroups.y * gl_WorkGroupID.z);
+    uint slice = threadIndex / threadsPerSlice;
+    uint threadInSlice = threadIndex % threadsPerSlice;
+    ivec3 tile = ivec3(gl_WorkGroupID.x, gl_WorkGroupID.y * slicesPerGroup + slice, gl_WorkGroupID.z);
+    ivec3 previousVolumePosition = tile * sceneVoxelCoarseCellSize + shapeDataSSBO.volumeOrigin.xyz - shapeDataSSBO.previousVolumeOrigin.xyz;
+    bool newlyExposed = shapeDataSSBO.captureFrame == 1u || any(lessThan(previousVolumePosition, ivec3(0)))
+        || any(greaterThanEqual(previousVolumePosition, sceneVoxelVolumeSize));
+    if (threadInSlice == 0u) {
+        bool selected = IsReflectionCellSelected(tile * sceneVoxelCoarseCellSize);
+        tilesToClear[slice] = newlyExposed || (selected
+            && imageLoad(wsr_coarse_img, GetSceneVoxelCoarseStoragePosition(tile)).r != 0u);
+    }
+    barrier();
+    if (tilesToClear[slice]) {
+        const int layerStride = int(threadsPerSlice) / (sceneVoxelCoarseCellSize.x * sceneVoxelCoarseCellSize.y);
+        ivec3 local = ivec3(int(threadInSlice) % sceneVoxelCoarseCellSize.x,
+            (int(threadInSlice) / sceneVoxelCoarseCellSize.x) % sceneVoxelCoarseCellSize.y,
+            int(threadInSlice) / (sceneVoxelCoarseCellSize.x * sceneVoxelCoarseCellSize.y));
+        ivec3 base = tile * sceneVoxelCoarseCellSize + local;
+        for (int z = 0; z < sceneVoxelCoarseCellSize.z; z += layerStride) {
+            ivec3 cell = base + ivec3(0, 0, z);
+            ivec3 storage = GetSceneVoxelStoragePosition(cell);
+            int index = GetSceneVoxelIndexFromStorage(storage);
+            imageStore(wsr_img, storage, uvec4(0u));
+            if (newlyExposed) shapeHeadSSBO.heads[index] = 0u;
+            blockDataSSBO.metadata[lavaCornerCount + index] = 0u;
+            if (newlyExposed) for (int face = 0; face < 6; face++)
+                blockDataSSBO.faceRefs[6 * index + face] = 0u;
         }
-        if (!refresh || gl_WorkGroupID != uvec3(0u)) return;
-        if (lane == 0u) epoch = ++shapeDataSSBO.epoch;
-        barrier();
+        const ivec3 lodCells = sceneVoxelCoarseCellSize / 4;
+        if (int(threadInSlice) < lodCells.x * lodCells.y * lodCells.z) {
+            ivec3 lod = ivec3(int(threadInSlice) % lodCells.x, (int(threadInSlice) / lodCells.x) % lodCells.y,
+                int(threadInSlice) / (lodCells.x * lodCells.y));
+            imageStore(wsr_lod_img, GetSceneVoxelLodStoragePosition(tile * lodCells + lod), uvec4(0u));
+        }
+        if (threadInSlice == 0u) imageStore(wsr_coarse_img, GetSceneVoxelCoarseStoragePosition(tile), uvec4(0u));
+    }
+    uint invocation = group * gl_WorkGroupSize.x + threadIndex;
+    uint stride = gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z * gl_WorkGroupSize.x;
+    for (uint i = invocation; i < shapeHaloHeadCapacity; i += stride) {
+        shapeHeadSSBO.haloCellKeys[i] = 0u;
+        if (shapeDataSSBO.captureFrame == 1u) shapeHeadSSBO.haloHeads[i] = 0u;
+    }
+    uint haloSlice = (shapeHaloHeadCapacity + 2047u) / 2048u;
+    uint haloIndex = (shapeDataSSBO.captureFrame & 2047u) * haloSlice + invocation;
+    if (invocation < haloSlice && haloIndex < shapeHaloHeadCapacity)
+        shapeHeadSSBO.haloHeads[haloIndex] = 0u;
 
-        uint slice = (uint(sceneVoxelCount) + 2047u) / 2048u;
-        uint start = (epoch & 2047u) * slice;
-        for (uint i = lane; i < slice; i += 256u) {
-            uint index = start + i;
-            if (index < uint(sceneVoxelCount)) shapeHeadSSBO.heads[index] = 0u;
+    const uint headSweepPeriod = uint(2048 - reflectionActiveRegionCount);
+    uint headSlice = (uint(sceneVoxelCount) + headSweepPeriod - 1u) / headSweepPeriod;
+    uint headIndex = (shapeDataSSBO.captureFrame % headSweepPeriod) * headSlice + invocation;
+    if (invocation < headSlice && headIndex < uint(sceneVoxelCount)) {
+        uint word = shapeHeadSSBO.heads[headIndex];
+        if (word != 0u) {
+            int region = GetReflectionCellRegion(GetSceneVoxelPosition(headIndex));
+            uint regionGeneration = shapeDataSSBO.regionGenerations[region];
+            if (regionGeneration == 0u || (word & shapeHeadStampMask) != ((regionGeneration & 2047u) << 21u))
+                shapeHeadSSBO.heads[headIndex] = 0u;
         }
-    #endif
+    }
+    const uint faceSweepPeriod = uint(1023 - reflectionActiveRegionCount);
+    uint faceSlice = (uint(reflectionFaceCount) + faceSweepPeriod - 1u) / faceSweepPeriod;
+    uint threadOffset = group * gl_WorkGroupSize.x + threadIndex;
+    uint faceIndex = (shapeDataSSBO.captureFrame % faceSweepPeriod) * faceSlice + threadOffset;
+    if (threadOffset < faceSlice && faceIndex < uint(reflectionFaceCount)) {
+        uint reference = blockDataSSBO.faceRefs[faceIndex];
+        if (reference != 0u) {
+            int region = GetReflectionCellRegion(GetSceneVoxelPosition(faceIndex / 6u));
+            uint regionGeneration = shapeDataSSBO.regionGenerations[region];
+            uint stamp = reference & reflectionFaceStampMask;
+            bool live = regionGeneration != 0u && stamp == ((regionGeneration << 22u) & reflectionFaceStampMask);
+            bool previous = uint(region) == shapeDataSSBO.selectedRegion && shapeDataSSBO.previousRegionGeneration != 0u
+                && stamp == ((shapeDataSSBO.previousRegionGeneration << 22u) & reflectionFaceStampMask);
+            if (!live && !previous) blockDataSSBO.faceRefs[faceIndex] = 0u;
+        }
+    }
 }

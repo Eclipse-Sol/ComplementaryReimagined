@@ -119,8 +119,8 @@ void main() {
             #else
                 float wsrPixelStep = dFdx(texCoord.x) * viewWidth;
             #endif
-            wsrNormalGradX = getWSRNormalGrad(dFdx(texture4.rgb), wsrPixelStep);
-            wsrNormalGradY = getWSRNormalGrad(dFdy(texture4.rgb), wsrPixelStep);
+            wsrNormalGradX = GetWSRNormalGrad(dFdx(texture4.rgb), wsrPixelStep);
+            wsrNormalGradY = GetWSRNormalGrad(dFdy(texture4.rgb), wsrPixelStep);
         #endif
     #endif
 
@@ -173,7 +173,7 @@ void main() {
 
         if (abs(fresnelM - 0.5) < 0.5) { // 0.0 fresnel doesnt need ref calculations, and 1.0 fresnel basically means error
             #ifdef WSR_TRACE_PREPASS
-                hitBuffer.hits[reflectionPixelIndex()].ids = uvec4(0u);
+                hitBuffer.hits[GetReflectionPixelIndex()].ids = uvec4(0u);
                 #if WATER_REFLECT_QUALITY >= 1
                     if (z0 != z1) {
                         ivec2 p = ivec2(gl_GlobalInvocationID.xy), quad = p & ~ivec2(1);
@@ -182,10 +182,10 @@ void main() {
                         ivec2 py0 = ivec2((vec2(p.x, quad.y) + 0.5) * wsrPixelScale);
                         ivec2 py1 = ivec2((vec2(p.x, min(quad.y + 1, wsrSize.y - 1)) + 0.5) * wsrPixelScale);
                         float wsrPixelStep = wsrPixelScale.x;
-                        wsrNormalGradX = getWSRNormalGrad(
+                        wsrNormalGradX = GetWSRNormalGrad(
                             texelFetch(colortex4, px1, 0).rgb - texelFetch(colortex4, px0, 0).rgb, wsrPixelStep
                         );
-                        wsrNormalGradY = getWSRNormalGrad(
+                        wsrNormalGradY = GetWSRNormalGrad(
                             texelFetch(colortex4, py1, 0).rgb - texelFetch(colortex4, py0, 0).rgb, wsrPixelStep
                         );
                     }

@@ -58,29 +58,29 @@ const uint wsrModelTable[wsrModelEnd - wsrModelFirst] = uint[wsrModelEnd - wsrMo
     WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 10927, 7)        // 21235 flat pale_moss_carpet
 );
 
-bool isReflectionCutoutCube(int mat) {
+bool IsReflectionCutoutCube(int mat) {
     return mat == 10293; // copper grate
 }
 
-bool isReflectionShapeId(int mat) {
+bool IsReflectionShapeId(int mat) {
     return mat >= 11264 && mat < wsrModelEnd && (mat < 19456 || mat >= 20002);
 }
 
-int getReflectionShapeFamily(int mat) {
+int GetReflectionShapeFamily(int mat) {
     if (mat < 11264 || mat >= wsrModelEnd) return 0;
     if (mat < 19456) return ((mat - 11264) >> 10) + 1;
     if (mat >= wsrModelFirst) return int((wsrModelTable[mat - wsrModelFirst] >> 16u) & 255u);
     return mat >= 20002 ? WSR_FAMILY_CAPTURED : WSR_FAMILY_NONE;
 }
 
-int getReflectionMaterial(int mat) {
+int GetReflectionMaterial(int mat) {
     if (mat < 11264 || mat >= wsrModelEnd) return mat;
     if (mat < 19456) return 10000 + ((mat - 11264) & 1023);
     if (mat >= wsrModelFirst) return int(wsrModelTable[mat - wsrModelFirst] & 65535u);
     return mat >= 20002 ? mat - 10002 : mat;
 }
 
-int getReflectionShapeModel(int mat) {
+int GetReflectionShapeModel(int mat) {
     if (mat >= wsrModelFirst && mat < wsrModelEnd) return int(wsrModelTable[mat - wsrModelFirst] >> 24u);
     return 0;
 }

@@ -89,7 +89,7 @@ void DoFoliageColorTweaks(inout vec3 color, inout vec3 shadowMult, inout float s
 //Program//
 void voxy_emitFragment(VoxyFragmentParameters parameters) {
     // Prepare
-        mat = getReflectionMaterial(int(parameters.customId));
+        mat = GetReflectionMaterial(int(parameters.customId));
         lmCoord = clamp((parameters.lightMap - 0.03125) * 1.06667, vec2(0.0), vec2(0.9333, 1.0));
         lmCoordM = lmCoord;
         normal = upVec;

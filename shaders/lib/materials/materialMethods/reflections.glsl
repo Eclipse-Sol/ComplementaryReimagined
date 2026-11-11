@@ -31,15 +31,15 @@ float refDist = far;
 
 #include "/lib/materials/materialMethods/reflectionBackground.glsl"
 
-float getWSRSurfaceBias(vec3 viewPos) {
+float GetWSRSurfaceBias(vec3 viewPos) {
     return 0.001 + 3.576278687e-7 * abs(gbufferProjectionInverse[2][3]) * dot(viewPos, viewPos);
 }
 
-vec3 getWSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir) {
-    return viewPos + rayDir * (getWSRSurfaceBias(viewPos) / max(dot(rayDir, normalize(normal)), 0.04));
+vec3 GetWSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir) {
+    return viewPos + rayDir * (GetWSRSurfaceBias(viewPos) / max(dot(rayDir, normalize(normal)), 0.04));
 }
 
-vec3 getSSRReflectionStart(vec3 viewPos, vec3 normal, float distance, float fresnel) {
+vec3 GetSSRReflectionStart(vec3 viewPos, vec3 normal, float distance, float fresnel) {
     return viewPos + normal * (distance * 0.025 * (1.0 - fresnel) + 0.05);
 }
 
@@ -68,7 +68,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     #endif
 
     vec3 reflectionOriginNormal = dot(geoNormal, geoNormal) > 1e-6 ? geoNormal : normalMR;
-    WSR_PRECISE vec3 reflectionStart = getWSRReflectionStart(viewPos, reflectionOriginNormal, nViewPosR);
+    WSR_PRECISE vec3 reflectionStart = GetWSRReflectionStart(viewPos, reflectionOriginNormal, nViewPosR);
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
@@ -85,7 +85,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
             if (!wsrTranslucent) {
             // Ray Marching
-            vec3 start = getSSRReflectionStart(viewPos, normalMR, lViewPos, fresnel);
+            vec3 start = GetSSRReflectionStart(viewPos, normalMR, lViewPos, fresnel);
             #if defined GBUFFERS_WATER && WATER_STYLE >= 2
                 vec3 vector = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
             #else
@@ -312,7 +312,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             #endif
             {
                 float traceLength = far;
-                vec4 wsrReflection = getWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
+                vec4 wsrReflection = GetWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
                                             RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent,
                                             length(reflectionStart - viewPos));
                 if (wsrTranslucent) return wsrReflection;
