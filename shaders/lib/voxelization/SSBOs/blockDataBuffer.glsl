@@ -21,14 +21,28 @@ layout(std430, binding = 0) BLOCK_DATA_QUALIFIER buffer blockDataBuffer {
         uint allocationCapacity;
         uint nextRegionStart;
     #endif
-    uint faceRefs[reflectionFaceCount];
-    uint metadata[lavaCornerCount + sceneVoxelCount];
-    uvec4 faces[2u * reflectionFaceCapacity];
-    uint storageEnd[];
+    // One array because Intel's Windows driver truncates block member offsets past 64 MiB
+    uint words[];
 } blockDataSSBO;
 
 #undef BLOCK_DATA_QUALIFIER
 
+#if WORLD_SPACE_SHAPES > 0
+    const int reflectionHeaderWordCount = 7 + reflectionMaxRegionCount;
+#else
+    const int reflectionHeaderWordCount = 4;
+#endif
+const int reflectionMetadataBase = reflectionFaceCount;
+const int reflectionFaceRecordBase = ((reflectionHeaderWordCount + reflectionMetadataBase + lavaCornerCount + sceneVoxelCount + 3) & ~3)
+                                   - reflectionHeaderWordCount;
+const int reflectionStorageWordCount = reflectionFaceRecordBase + 8 * int(reflectionFaceCapacity);
+
 bool ReflectionStorageAvailable() {
-    return blockDataSSBO.storageEnd.length() >= 4;
+    return blockDataSSBO.words.length() >= reflectionStorageWordCount;
+}
+
+uvec4 LoadReflectionFaceRecord(uint index) {
+    uint word = uint(reflectionFaceRecordBase) + 4u * index;
+    return uvec4(blockDataSSBO.words[word], blockDataSSBO.words[word + 1u],
+                 blockDataSSBO.words[word + 2u], blockDataSSBO.words[word + 3u]);
 }

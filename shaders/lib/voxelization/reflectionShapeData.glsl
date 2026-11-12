@@ -43,7 +43,7 @@ vec2 GetShapeCuboidSize(uint mapping) {
 
 uint GetShapeState(reflectionCellHandle cell) {
     if (!ReflectionStorageAvailable()) return 0u;
-    uint data = blockDataSSBO.metadata[GetShapeStateWordIndex(cell.storageIndex)];
+    uint data = blockDataSSBO.words[reflectionMetadataBase + GetShapeStateWordIndex(cell.storageIndex)];
     uint regionGeneration = cell.regionGeneration;
     return regionGeneration != 0u && (data & 0xfffff000u) == ((regionGeneration + 1u) << 12u) ? data & 4095u : 0u;
 }
@@ -446,7 +446,7 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                             if (spans.z) occupied |= occupied << 4u;
                             bits |= occupied;
                         }
-                        if (!plane && ReflectionStorageAvailable()) atomicOr(blockDataSSBO.metadata[GetShapeStateWordIndex(voxelIndex)], bits);
+                        if (!plane && ReflectionStorageAvailable()) atomicOr(blockDataSSBO.words[reflectionMetadataBase + GetShapeStateWordIndex(voxelIndex)], bits);
                         return;
                     }
                     next = GetNextShapeRecord(other);

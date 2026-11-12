@@ -3,10 +3,13 @@
 // Keep in sync with bufferObject.4 and .7
 #if COLORED_LIGHTING >= 256
     const uint shapeRecordCapacity = 2097151u; // 64 MiB
+    const uint shapeHaloHeadCapacity = 2097152u;
 #elif COLORED_LIGHTING >= 192
     const uint shapeRecordCapacity = 1048575u; // 32 MiB
+    const uint shapeHaloHeadCapacity = 1048576u;
 #else
     const uint shapeRecordCapacity = 524288u;  // 16 MiB
+    const uint shapeHaloHeadCapacity = 524288u;
 #endif
 struct shapeRecord {
     uvec4 shading;

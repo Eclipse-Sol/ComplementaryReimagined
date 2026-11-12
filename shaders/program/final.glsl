@@ -167,7 +167,7 @@ void main() {
             if (cornerPixel < 64) {
             #endif
                 int cornerIndex = (frameCounter * 64 + cornerPixel) % lavaCornerCount;
-                blockDataSSBO.metadata[cornerIndex] = 0u;
+                blockDataSSBO.words[reflectionMetadataBase + cornerIndex] = 0u;
             }
         }
     #endif

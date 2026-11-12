@@ -80,7 +80,7 @@ void main() {
         uint chunkStart = ((sweepGeneration + step) & 1023u) * chunk;
         for (uint i = group * gl_WorkGroupSize.x + gl_LocalInvocationID.x; i < chunk; i += stride) {
             uint index = chunkStart + i;
-            if (index < uint(reflectionFaceCount)) blockDataSSBO.faceRefs[index] = 0u;
+            if (index < uint(reflectionFaceCount)) blockDataSSBO.words[index] = 0u;
         }
     }
 }

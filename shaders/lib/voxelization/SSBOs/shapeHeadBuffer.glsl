@@ -2,11 +2,10 @@
 
 const uint shapeHeadPointerMask = 2097151u;
 const uint shapeHeadStampMask = 0xffe00000u;
-const uint shapeHaloHeadCapacity = 1u << uint(findMSB(shapeRecordCapacity - 1u) + 1);
 layout(std430, binding = 6) SSBO_QUALIFIER buffer shapeHeadBuffer {
-    uint heads[sceneVoxelCount];
     uint haloCellKeys[shapeHaloHeadCapacity]; // storage cell index + 1
-    uint haloHeads[];
+    uint haloHeads[shapeHaloHeadCapacity];
+    uint heads[];
 } shapeHeadSSBO;
 
 uint GetShapeHeadStamp() {

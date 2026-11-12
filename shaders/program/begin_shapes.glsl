@@ -42,9 +42,9 @@ void main() {
             int index = GetSceneVoxelIndexFromStorage(storage);
             imageStore(wsr_img, storage, uvec4(0u));
             if (newlyExposed) shapeHeadSSBO.heads[index] = 0u;
-            blockDataSSBO.metadata[lavaCornerCount + index] = 0u;
+            blockDataSSBO.words[reflectionMetadataBase + lavaCornerCount + index] = 0u;
             if (newlyExposed) for (int face = 0; face < 6; face++)
-                blockDataSSBO.faceRefs[6 * index + face] = 0u;
+                blockDataSSBO.words[6 * index + face] = 0u;
         }
         const ivec3 lodCells = sceneVoxelCoarseCellSize / 4;
         if (int(threadInSlice) < lodCells.x * lodCells.y * lodCells.z) {
@@ -82,7 +82,7 @@ void main() {
     uint threadOffset = group * gl_WorkGroupSize.x + threadIndex;
     uint faceIndex = (shapeDataSSBO.captureFrame % faceSweepPeriod) * faceSlice + threadOffset;
     if (threadOffset < faceSlice && faceIndex < uint(reflectionFaceCount)) {
-        uint reference = blockDataSSBO.faceRefs[faceIndex];
+        uint reference = blockDataSSBO.words[faceIndex];
         if (reference != 0u) {
             int region = GetReflectionCellRegion(GetSceneVoxelPosition(faceIndex / 6u));
             uint regionGeneration = shapeDataSSBO.regionGenerations[region];
@@ -90,7 +90,7 @@ void main() {
             bool live = regionGeneration != 0u && stamp == ((regionGeneration << 22u) & reflectionFaceStampMask);
             bool previous = uint(region) == shapeDataSSBO.selectedRegion && shapeDataSSBO.previousRegionGeneration != 0u
                 && stamp == ((shapeDataSSBO.previousRegionGeneration << 22u) & reflectionFaceStampMask);
-            if (!live && !previous) blockDataSSBO.faceRefs[faceIndex] = 0u;
+            if (!live && !previous) blockDataSSBO.words[faceIndex] = 0u;
         }
     }
 }

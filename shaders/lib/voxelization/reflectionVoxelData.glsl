@@ -82,9 +82,9 @@ uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
     if (!ReflectionStorageAvailable()) return uvec3(0u);
     int face = 6 * cell.storageIndex + GetReflectionFaceIndex(normal);
     #if defined SHADOW && defined VERTEX_SHADER
-        uint reference = atomicAdd(blockDataSSBO.faceRefs[face], 0u);
+        uint reference = atomicAdd(blockDataSSBO.words[face], 0u);
     #else
-        uint reference = blockDataSSBO.faceRefs[face];
+        uint reference = blockDataSSBO.words[face];
     #endif
     uint pointer = reference & reflectionFacePointerMask;
     #if WORLD_SPACE_SHAPES > 0
@@ -116,7 +116,7 @@ uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
     #else
         uint index = (recordGeneration & 1u) * reflectionFaceCapacity + pointer - 1u;
     #endif
-    uvec4 record = blockDataSSBO.faces[index];
+    uvec4 record = LoadReflectionFaceRecord(index);
     return record.w == recordGeneration ? record.xyz : uvec3(0u);
 }
 
@@ -165,7 +165,7 @@ uint GetLavaFrameStamp() {
 
 float GetLavaCornerHeight(ivec3 corner) {
     if (!ReflectionStorageAvailable()) return 1.0;
-    uint data = blockDataSSBO.metadata[GetLavaCornerIndex(corner)];
+    uint data = blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(corner)];
     return (data & 0xfffff000u) == GetLavaFrameStamp() ? float(data & 4095u) / 4095.0 : 1.0;
 }
 
@@ -181,12 +181,12 @@ float GetReflectionLightBlend() {
 void MergeStampedWord(int index, uint payload, uint stamp, bool keepMax) {
     if (!ReflectionStorageAvailable()) return;
     uint newData = stamp | payload;
-    uint oldData = atomicAdd(blockDataSSBO.metadata[index], 0u);
+    uint oldData = atomicAdd(blockDataSSBO.words[reflectionMetadataBase + index], 0u);
     while (true) {
         uint updated = newData;
         if ((oldData & 0xfffff000u) == stamp) updated = keepMax ? max(oldData, newData) : oldData | newData;
         if (updated == oldData) break;
-        uint previous = atomicCompSwap(blockDataSSBO.metadata[index], oldData, updated);
+        uint previous = atomicCompSwap(blockDataSSBO.words[reflectionMetadataBase + index], oldData, updated);
         if (previous == oldData) break;
         oldData = previous;
     }
@@ -214,13 +214,17 @@ uint CaptureReflectionFace(uvec3 data) {
     uint generation = blockDataSSBO.faceGeneration;
     uint index = (generation & 1u) * reflectionFaceCapacity + slot;
     #endif
-    blockDataSSBO.faces[index] = uvec4(data, generation);
+    uint word = uint(reflectionFaceRecordBase) + 4u * index;
+    blockDataSSBO.words[word] = data.x;
+    blockDataSSBO.words[word + 1u] = data.y;
+    blockDataSSBO.words[word + 2u] = data.z;
+    blockDataSSBO.words[word + 3u] = generation;
     memoryBarrier();
     return ((generation << 22u) & reflectionFaceStampMask) | (slot + 1u);
 }
 
 void PublishReflectionFace(ivec3 voxelPos, vec3 normal, uint reference) {
-    if (reference != 0u) atomicExchange(blockDataSSBO.faceRefs[GetFaceRecordSlot(voxelPos, normal)], reference);
+    if (reference != 0u) atomicExchange(blockDataSSBO.words[GetFaceRecordSlot(voxelPos, normal)], reference);
 }
 
 void StoreLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float textureRotation) {
