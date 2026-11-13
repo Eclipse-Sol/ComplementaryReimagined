@@ -84,3 +84,7 @@ int GetReflectionShapeModel(int mat) {
     if (mat >= wsrModelFirst && mat < wsrModelEnd) return int(wsrModelTable[mat - wsrModelFirst] >> 24u);
     return 0;
 }
+
+bool IsReflectionGrassSide(int mat, vec3 normal) {
+    return GetReflectionMaterial(mat) == 10132 && abs(normal.y) < 0.5;
+}

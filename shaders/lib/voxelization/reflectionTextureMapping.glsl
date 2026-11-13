@@ -8,6 +8,15 @@ vec2 OrientReflectionFaceVector(vec2 v, uint orientation) {
     return (orientation & 1u) != 0u ? v.yx : v;
 }
 
+vec2 UnorientReflectionFaceVector(vec2 v, uint orientation) {
+    if ((orientation & 1u) != 0u) v = v.yx;
+    return v * (1.0 - 2.0 * vec2((orientation >> 1u) & 1u, (orientation >> 2u) & 1u));
+}
+
+vec2 GetReflectionTextureScale(float radius, vec2 atlasSize) {
+    return 2.0 * radius * vec2(1.0, atlasSize.x / atlasSize.y);
+}
+
 uint GetDefaultReflectionFaceOrientation(vec3 normal) {
     return (uint(normal.x < -0.5 || abs(normal.y) > 0.5 || normal.z > 0.5) << 1u)
          | (uint(normal.y > 0.5) << 2u);

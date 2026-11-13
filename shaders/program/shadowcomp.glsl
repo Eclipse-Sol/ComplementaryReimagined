@@ -8,9 +8,15 @@
 //////////Shadowcomp 1//////////Shadowcomp 1//////////Shadowcomp 1//////////
 #ifdef SHADOWCOMP
 
+#if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+    #include "/lib/voxelization/reflectionVoxelVolume.glsl"
+    #define SHAPE_BUILD
+    #include "/lib/voxelization/reflectionVoxelData.glsl"
+    #undef SHAPE_BUILD
+    #include "/lib/voxelization/reflectionGrassResolve.glsl"
+#endif
+
 #if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
-    #define SSBO_QUALIFIER
-    #include "/lib/voxelization/SSBOs/playerVerticesBuffer.glsl"
     #include "/lib/voxelization/playerCaptureBounds.glsl"
 #endif
 
@@ -82,6 +88,12 @@ vec4 GetLightCalculated(sampler3D lightSampler, ivec3 pos, ivec3 voxelVolumeSize
 
 //Program//
 void main() {
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+        uint grassIndex = gl_GlobalInvocationID.x + uint(voxelVolumeSize.x) *
+                         (gl_GlobalInvocationID.y + uint(voxelVolumeSize.y) * gl_GlobalInvocationID.z);
+        if (ReflectionStorageAvailable() && grassIndex < min(blockDataSSBO.grassCaptureCount, grassCaptureCapacity))
+            ResolveGrassSideOverlay(grassIndex);
+    #endif
     #if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
         if (all(equal(gl_WorkGroupID, uvec3(0u))) && gl_LocalInvocationIndex == 0u)
             mergePlayerBounds();

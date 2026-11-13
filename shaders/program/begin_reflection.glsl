@@ -53,6 +53,7 @@ void main() {
     blockDataSSBO.allocationCapacity = GetReflectionRingFreeCount(writeStart, oldestLiveStart, capacity);
     blockDataSSBO.regionStartIndices[selectedRegion] = writeStart;
     blockDataSSBO.faceAllocationAttempts = 0u;
+    blockDataSSBO.grassCaptureCount = 0u;
 }
 #else
 #include "/lib/voxelization/reflectionVoxelVolume.glsl"
@@ -67,6 +68,7 @@ void main() {
     if (gl_LocalInvocationID.x == 0u) {
         if (gl_WorkGroupID == uvec3(0u)) {
             blockDataSSBO.faceAllocationAttempts = 0u;
+            blockDataSSBO.grassCaptureCount = 0u;
             sweepGeneration = atomicAdd(blockDataSSBO.faceGeneration, 1u) + 1u;
         } else {
             sweepGeneration = atomicAdd(blockDataSSBO.faceGeneration, 0u);

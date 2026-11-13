@@ -27,6 +27,7 @@ const int reflectionFaceCount = 6 * sceneVoxelCount;
 #endif
 const uint reflectionFacePointerMask = 4194303u;
 const uint reflectionFaceStampMask = 0xffc00000u;
+const uint grassCaptureCapacity = reflectionFaceCapacity / 4u + 1u;
 #define WSR_MAX_REGIONS 20
 const int reflectionActiveRegionCount = int(100.0 / WSR_REBUILD_PERCENT + 0.5);
 const int reflectionMaxRegionCount = reflectionActiveRegionCount >= 1 && reflectionActiveRegionCount <= WSR_MAX_REGIONS ? WSR_MAX_REGIONS : -1;

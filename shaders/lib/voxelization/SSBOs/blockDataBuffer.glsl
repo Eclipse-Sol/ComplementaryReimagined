@@ -13,7 +13,7 @@ layout(std430, binding = 0) BLOCK_DATA_QUALIFIER buffer blockDataBuffer {
     #else
         uint faceGeneration;
     #endif
-    uint allocationPadding;
+    uint grassCaptureCount;
     uint lavaRefreshFrame;
     #if WORLD_SPACE_SHAPES > 0
         uint regionStartIndices[reflectionMaxRegionCount];
@@ -35,7 +35,9 @@ layout(std430, binding = 0) BLOCK_DATA_QUALIFIER buffer blockDataBuffer {
 const int reflectionMetadataBase = reflectionFaceCount;
 const int reflectionFaceRecordBase = ((reflectionHeaderWordCount + reflectionMetadataBase + lavaCornerCount + sceneVoxelCount + 3) & ~3)
                                    - reflectionHeaderWordCount;
-const int reflectionStorageWordCount = reflectionFaceRecordBase + 8 * int(reflectionFaceCapacity);
+const int reflectionGrassOverlayBase = reflectionFaceRecordBase + 8 * int(reflectionFaceCapacity);
+const int reflectionGrassCaptureBase = reflectionGrassOverlayBase + 8 * int(reflectionFaceCapacity);
+const int reflectionStorageWordCount = reflectionGrassCaptureBase + 4 * int(grassCaptureCapacity);
 
 bool ReflectionStorageAvailable() {
     return blockDataSSBO.words.length() >= reflectionStorageWordCount;
@@ -43,6 +45,18 @@ bool ReflectionStorageAvailable() {
 
 uvec4 LoadReflectionFaceRecord(uint index) {
     uint word = uint(reflectionFaceRecordBase) + 4u * index;
+    return uvec4(blockDataSSBO.words[word], blockDataSSBO.words[word + 1u],
+                 blockDataSSBO.words[word + 2u], blockDataSSBO.words[word + 3u]);
+}
+
+uvec4 LoadReflectionGrassOverlay(uint index) {
+    uint word = uint(reflectionGrassOverlayBase) + 4u * index;
+    return uvec4(blockDataSSBO.words[word], blockDataSSBO.words[word + 1u],
+                 blockDataSSBO.words[word + 2u], blockDataSSBO.words[word + 3u]);
+}
+
+uvec4 LoadReflectionGrassCapture(uint index) {
+    uint word = uint(reflectionGrassCaptureBase) + 4u * index;
     return uvec4(blockDataSSBO.words[word], blockDataSSBO.words[word + 1u],
                  blockDataSSBO.words[word + 2u], blockDataSSBO.words[word + 3u]);
 }

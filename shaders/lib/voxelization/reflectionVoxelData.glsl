@@ -53,8 +53,12 @@ reflectionCellHandle GetReflectionCellHandle(ivec3 cell) {
     return 6 * GetSceneVoxelIndex(voxelPos) + GetReflectionFaceIndex(normal);
 }
 
+uvec3 PackReflectionTextureBounds(vec3 bounds) {
+    return uvec3(clamp(round(bounds * 65536.0), 0.0, 65535.0));
+}
+
 uvec3 PackFaceData(faceData data) {
-    uvec3 uv = uvec3(clamp(round(data.textureBounds * 65536.0), 0.0, 65535.0));
+    uvec3 uv = PackReflectionTextureBounds(data.textureBounds);
     uvec2 lightmap = uvec2(clamp(data.lightmap * 4096.0, 0.0, 4095.0));
     return uvec3((uv.x << 16u) | uv.y,
                  uv.z | (lightmap.x << 16u) | ((lightmap.y & 15u) << 28u),
@@ -78,7 +82,8 @@ faceData UnpackReflectionFaceData(uvec3 data, out uint orientation) {
                     vec3(data.x >> 16u, data.x & 65535u, data.y & 65535u) / 65536.0);
 }
 
-uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
+uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal, out uint faceIndex) {
+    faceIndex = 0xffffffffu;
     if (!ReflectionStorageAvailable()) return uvec3(0u);
     int face = 6 * cell.storageIndex + GetReflectionFaceIndex(normal);
     #if defined SHADOW && defined VERTEX_SHADER
@@ -117,13 +122,25 @@ uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
         uint index = (recordGeneration & 1u) * reflectionFaceCapacity + pointer - 1u;
     #endif
     uvec4 record = LoadReflectionFaceRecord(index);
-    return record.w == recordGeneration ? record.xyz : uvec3(0u);
+    if (record.w != recordGeneration) return uvec3(0u);
+    faceIndex = index;
+    return record.xyz;
 }
 
- faceData GetFaceData(reflectionCellHandle cellRef, vec3 normal, out uint orientation) {
-    faceData face = UnpackReflectionFaceData(ReadReflectionFace(cellRef, normal), orientation);
+uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
+    uint faceIndex;
+    return ReadReflectionFace(cell, normal, faceIndex);
+}
+
+faceData GetFaceData(reflectionCellHandle cellRef, vec3 normal, out uint orientation, out uint faceIndex) {
+    faceData face = UnpackReflectionFaceData(ReadReflectionFace(cellRef, normal, faceIndex), orientation);
     orientation ^= GetDefaultReflectionFaceOrientation(normal);
     return face;
+}
+
+faceData GetFaceData(reflectionCellHandle cellRef, vec3 normal, out uint orientation) {
+    uint faceIndex;
+    return GetFaceData(cellRef, normal, orientation, faceIndex);
 }
 
 faceData GetFaceData(reflectionCellHandle cellRef, vec3 normal) {
@@ -228,7 +245,7 @@ void PublishReflectionFace(ivec3 voxelPos, vec3 normal, uint reference) {
 }
 
 void StoreLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float textureRotation) {
-    uvec3 uv = uvec3(clamp(round(vec3(origin, textureRad) * 65536.0), 0.0, 65535.0));
+    uvec3 uv = PackReflectionTextureBounds(vec3(origin, textureRad));
     uvec2 lightmap = uvec2(round(clamp(vec2(lmCoord.x * 0.99 + 0.001, lmCoord.y), 0.0, 1.0) * 15.0));
     uint angle = uint(round(fract(textureRotation / 6.28318530718) * 256.0)) & 255u;
     uvec3 data = uvec3((uv.x << 16u) | uv.y,
@@ -240,8 +257,20 @@ void StoreReflectionFace(ivec3 voxelPos, vec3 normal, uvec3 data) {
     PublishReflectionFace(voxelPos, normal, CaptureReflectionFace(data));
 }
 
+void StoreGrassSideOverlay(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, uint orientation) {
+    uint index = atomicAdd(blockDataSSBO.grassCaptureCount, 1u);
+    if (index >= grassCaptureCapacity) return;
+    uvec3 uv = PackReflectionTextureBounds(vec3(origin, textureRad));
+    uint key = uint(GetSceneVoxelIndex(voxelPos)) | (uint(GetReflectionFaceIndex(normal)) << 24u);
+    uint word = uint(reflectionGrassCaptureBase) + 4u * index;
+    blockDataSSBO.words[word] = (uv.x << 16u) | uv.y;
+    blockDataSSBO.words[word + 1u] = uv.z | (orientation << 16u);
+    blockDataSSBO.words[word + 2u] = packUnorm4x8(vec4(glColor.rgb, 0.0));
+    blockDataSSBO.words[word + 3u] = key;
+}
+
 void StoreFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, uint orientation,
-                   bool storeToAllFaces, bool storeToAllFacesExceptTop, vec3 playerPos) {
+                   bool storeToAllFaces, bool storeToAllFacesExceptTop, vec3 playerPos, bool grassSide) {
     vec2 lmCoordM = lmCoord;
 
     if (storeToAllFaces || storeToAllFacesExceptTop) {
@@ -261,6 +290,14 @@ void StoreFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, u
     vec2 faceLightmap = vec2(lmCoordM.x * 0.99 + 0.001, lmCoordM.y);
     uvec3 newData = PackReflectionFaceData(faceData(glColor.rgb, faceLightmap, vec3(origin, textureRad)), orientation);
     uint reference = CaptureReflectionFace(newData);
+    if (grassSide && reference != 0u) {
+        uint index = (reference & reflectionFacePointerMask) - 1u;
+        #if WORLD_SPACE_SHAPES <= 0
+            index += (blockDataSSBO.faceGeneration & 1u) * reflectionFaceCapacity;
+        #endif
+        blockDataSSBO.words[uint(reflectionGrassOverlayBase) + 4u * index + 3u] = 0u;
+        memoryBarrier();
+    }
 
     if (storeToAllFaces || storeToAllFacesExceptTop) {
         vec3 faceOffsets[6] = vec3[6](

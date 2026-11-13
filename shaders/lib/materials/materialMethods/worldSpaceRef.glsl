@@ -69,6 +69,77 @@ vec3 GetWSRNormalGrad(vec3 normalDiff, float pixelStep) {
     return normalDiff * (max0(diffLength - 0.014) / max(diffLength, 1e-6) / pixelStep);
 }
 
+#if MC_VERSION >= 12111 && IRIS_VERSION < 11005 && !defined WSR_TRACE_PREPASS
+    #define WSR_LEGACY_LOD
+#endif
+
+#ifdef WSR_LEGACY_LOD
+vec4 BlendReflectionLod(vec4 color, vec3 bounds, vec2 local, vec2 gradX, vec2 gradY,
+                       vec2 atlasSize, vec3 tint, float dither, bool opaque) {
+    vec2 texelGradX = gradX * atlasSize, texelGradY = gradY * atlasSize;
+    float lod = 0.5 * log2(max(max(dot(texelGradX, texelGradX), dot(texelGradY, texelGradY)), 1e-12));
+    float fakeLod = 0.5 * lod;
+    float lodMix = clamp01(fakeLod - 0.75 + 0.25 * dither);
+    if (lodMix > 0.0) {
+        #ifdef WSR_SPLIT_ENABLED
+            vec4 sharpColor = color;
+        #endif
+        vec2 span = local / pow(2.0, int(1.5 + pow2(max0(fakeLod))));
+        vec2 scale = GetReflectionTextureScale(bounds.z, atlasSize);
+        vec4 lodColor1 = texture2DLod(textureAtlas, bounds.xy + scale * (0.5 + span), fakeLod);
+        vec4 lodColor2 = texture2DLod(textureAtlas, bounds.xy + scale * (0.25 + span), fakeLod);
+        vec4 lodColor3 = texture2DLod(textureAtlas, bounds.xy + scale * span, fakeLod);
+        if (!opaque) {
+            color.rgb *= color.a;
+            lodColor1.rgb *= lodColor1.a;
+            lodColor2.rgb *= lodColor2.a;
+            lodColor3.rgb *= lodColor3.a;
+        }
+        color = mix(color, 0.333333 * (lodColor1 + lodColor2 + lodColor3) * vec4(tint, 1.0), lodMix);
+        if (!opaque) color.rgb = color.a > 1e-6 ? color.rgb / color.a : vec3(0.0);
+        else {
+            if (dot(color.rgb, vec3(0.333333)) - 0.5 < 0.49) color.a = mix(color.a, 1.0, lodMix);
+            #ifdef WSR_SPLIT_ENABLED
+                if (color.a < 0.0041) return sharpColor;
+            #else
+                if (color.a < 0.0041) return vec4(-1.0);
+            #endif
+        }
+    }
+    return color;
+}
+#endif
+
+#ifndef WSR_TRACE_PREPASS
+vec2 ApplyGrassSideOverlay(inout vec4 color, uvec3 data, vec2 local, float baseRadius, uint baseOrientation,
+                            vec3 normal, vec2 gradX, vec2 gradY, vec2 atlasSize, float dither) {
+    vec3 bounds = vec3(data.x >> 16u, data.x & 65535u, data.y & 65535u) / 65536.0;
+    vec3 tint = unpackUnorm4x8(data.z).rgb;
+    uint orientation = ((data.y >> 16u) & 7u) ^ GetDefaultReflectionFaceOrientation(normal);
+    vec2 uv = 0.5 + OrientReflectionFaceVector(UnorientReflectionFaceVector(local - 0.5, baseOrientation), orientation);
+    vec2 scale = GetReflectionTextureScale(bounds.z, atlasSize);
+    vec2 baseScale = GetReflectionTextureScale(baseRadius, atlasSize);
+    gradX = scale * OrientReflectionFaceVector(UnorientReflectionFaceVector(gradX / baseScale, baseOrientation), orientation);
+    gradY = scale * OrientReflectionFaceVector(UnorientReflectionFaceVector(gradY / baseScale, baseOrientation), orientation);
+    vec4 overlayColor = textureGrad(textureAtlas, bounds.xy + scale * clamp(uv, 0.0, 1.0), gradX, gradY);
+    #ifdef WSR_LEGACY_LOD
+        overlayColor = BlendReflectionLod(overlayColor, bounds, uv, gradX, gradY, atlasSize, vec3(1.0), dither, false);
+    #endif
+    float grassGreen = overlayColor.g * tint.g;
+    float smoothness = mix(color.r * 0.1 + 0.1, pow2(grassGreen), overlayColor.a);
+    float snowMin = 0.0;
+    #if defined IPBR && defined SNOWY_WORLD
+        snowMin = min(pow2(pow2(grassGreen)) * 1.9, 0.1) * overlayColor.a;
+        // Remove tint from the grass layer before compositing it over untinted dirt.
+        overlayColor.rgb *= 0.5 * (tint + 1.0);
+    #else
+        overlayColor.rgb *= tint;
+    #endif
+    color.rgb = mix(color.rgb, overlayColor.rgb, overlayColor.a);
+    return vec2(smoothness, snowMin);
+}
+#endif
+
 int GetReflectionMaterialAt(ivec3 cell, ivec3 storageOrigin) {
     if (any(lessThan(cell, ivec3(0))) || any(greaterThanEqual(cell, sceneVoxelVolumeSize))) return 0;
     return int(texelFetch(wsr_sampler, WrapReflectionStoragePosition(cell, storageOrigin, sceneVoxelVolumeSize), 0).r & 32767u);
@@ -141,6 +212,9 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
     vec2 faceTexCoord = GetLocalTexCoord(fract(playerPos + cameraPositionBestFract), normal);
     vec2 localTexCoord = faceTexCoord;
     uint faceOrientation = 0u;
+    #ifndef WSR_TRACE_PREPASS
+        uint faceIndex = 0xffffffffu;
+    #endif
     bool lavaTop = mat == 10068u && normal.y > 0.99;
     mat2 lavaTextureRotation;
     vec2 textureSizeAtlas = textureSize(textureAtlas, 0);
@@ -168,13 +242,17 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         #endif
     } else {
         if (IsReflectionCutoutCube(int(mat)) && dot(normal, normal) < 0.5) return vec4(-1.0);
-        faceData = GetFaceData(cellRef, normal, faceOrientation);
+        #ifdef WSR_TRACE_PREPASS
+            faceData = GetFaceData(cellRef, normal, faceOrientation);
+        #else
+            faceData = GetFaceData(cellRef, normal, faceOrientation, faceIndex);
+        #endif
         localTexCoord = GetLocalTexCoord(PlayerToSceneVoxel(playerPos) - vec3(voxelPos), normal);
         localTexCoord = clamp(0.5 + OrientReflectionFaceVector(localTexCoord - 0.5, faceOrientation), 0.0, 1.0);
     }
     if (faceData.textureBounds.z < 1e-6) return vec4(-1.0);
 
-    vec2 textureRadVec2 = faceData.textureBounds.z * vec2(1.0, textureSizeAtlas.x / textureSizeAtlas.y);
+    vec2 textureRadVec2 = 0.5 * GetReflectionTextureScale(faceData.textureBounds.z, textureSizeAtlas);
     vec2 textureCoord = faceData.textureBounds.xy + 2.0 * textureRadVec2 * localTexCoord;
 
     #ifdef WSR_LDS_GRADIENTS
@@ -228,45 +306,31 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         if (color.a <= 0.5) return vec4(-1.0);
     #endif
 
-    #if MC_VERSION >= 12111 && IRIS_VERSION < 11005 && !defined WSR_TRACE_PREPASS
-        // stupid fake lods because custom texture lods broke with Iris in newer mc versions
-        vec2 texelGradX = textureGradX * textureSizeAtlas;
-        vec2 texelGradY = textureGradY * textureSizeAtlas;
-        float lod = 0.5 * log2(max(max(dot(texelGradX, texelGradX), dot(texelGradY, texelGradY)), 1e-12));
-        float fakeLod = 0.5 * lod;
-        float lodMix = clamp01(fakeLod - 0.75 + 0.25 * dither);
-        if (lodMix > 0.0) {
-            vec2 lodCoordSpan = localTexCoord / pow(2.0, int(1.5 + pow2(max0(fakeLod)) + 0.0 * dither));
-
-            vec2 lodCoord1 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * (0.5 + lodCoordSpan);
-            vec2 lodCoord2 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * (0.25 + lodCoordSpan);
-            vec2 lodCoord3 = faceData.textureBounds.xy + 2.0 * textureRadVec2 * lodCoordSpan;
-            vec4 lodColor1 = texture2DLod(textureAtlas, lodCoord1, fakeLod) * vec4(faceData.glColor, 1.0);
-            vec4 lodColor2 = texture2DLod(textureAtlas, lodCoord2, fakeLod) * vec4(faceData.glColor, 1.0);
-            vec4 lodColor3 = texture2DLod(textureAtlas, lodCoord3, fakeLod) * vec4(faceData.glColor, 1.0);
-
-            vec4 sharpColor = color;
-            color = mix(color, 0.333333 * (lodColor1 + lodColor2 + lodColor3), lodMix);
-            if (dot(color.rgb, vec3(0.333333)) - 0.5 < 0.49) color.a = mix(color.a, 1.0, lodMix);
-            #ifdef WSR_SPLIT_ENABLED
-                if (color.a < 0.0041) color = sharpColor;
-            #else
-                if (color.a < 0.0041) return vec4(-1.0);
-            #endif
-        }
+    #ifdef WSR_LEGACY_LOD
+        color = BlendReflectionLod(color, faceData.textureBounds, localTexCoord, textureGradX, textureGradY,
+                                   textureSizeAtlas, faceData.glColor, dither, true);
+        if (color.a < 0.0) return color;
     #endif
 
     #ifdef WSR_TRACE_PREPASS
         return vec4(1.0);
     #else
+        vec2 grassSideMaterial = vec2(-1.0, 0.0);
+        if (faceIndex != 0xffffffffu && IsReflectionGrassSide(int(mat), normal)) {
+            uvec4 overlay = LoadReflectionGrassOverlay(faceIndex);
+            if (overlay.w == cellRef.regionGeneration)
+                grassSideMaterial = ApplyGrassSideOverlay(color, overlay.xyz, localTexCoord, faceData.textureBounds.z,
+                                                         faceOrientation, normal, textureGradX, textureGradY, textureSizeAtlas, dither);
+        }
+
         bool noSmoothLighting = false, noDirectionalShading = false;
         int subsurfaceMode = 0;
         float emission = 0.0, NdotU = normal.y, NdotE = normal.x, snowMinNdotU = 0.0;
         vec2 lmCoordM = vec2(1.0);
         vec3 shadowMult = vec3(1.0), maRecolor = vec3(0.0);
+        vec4 glColor = vec4(faceData.glColor, 1.0);
         #ifdef IPBR
             float lViewPos = length(playerPos);
-            vec4 glColor = vec4(faceData.glColor, 1.0);
             vec2 absMidCoordPos = vec2(textureRadVec2);
             vec2 midCoord = faceData.textureBounds.xy + 2.0 * textureRadVec2 * vec2(0.5);
             vec2 signMidCoordPos = localTexCoord * 2.0 - 1.0;
@@ -277,12 +341,14 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
             vec3 normalM = normal, geoNormal = normal;
 
             #define DURING_WORLDSPACE_REF
+            #define WSR_TERRAIN_SHADING
                 #ifndef IPBR_COMPAT_MODE
                     #define IPBR_COMPAT_MODE
                 #endif
                 #undef DISTANT_LIGHT_BOKEH
                 #include "/lib/materials/materialHandling/terrainIPBR.glsl"
             #undef DURING_WORLDSPACE_REF
+            #undef WSR_TERRAIN_SHADING
         #else
             if (mat == 10009 || mat == 10011) { // Leaves
                 #include "/lib/materials/specificMaterials/terrain/leaves.glsl"

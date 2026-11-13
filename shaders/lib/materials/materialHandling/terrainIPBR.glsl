@@ -370,6 +370,12 @@ if (mat < 11024) {
                                     #include "/lib/materials/specificMaterials/terrain/dirt.glsl"
                                 }
                                 else /*if (mat < 10136)*/ { // Grass Block:Normal
+                                    #ifdef WSR_TERRAIN_SHADING
+                                        if (grassSideMaterial.x >= 0.0) {
+                                            smoothnessG = grassSideMaterial.x;
+                                            snowMinNdotU = grassSideMaterial.y;
+                                        } else
+                                    #endif
                                     if (glColor.b < 0.98) { // Grass Block:Normal:Grass Part
                                         smoothnessG = pow2(color.g);
 

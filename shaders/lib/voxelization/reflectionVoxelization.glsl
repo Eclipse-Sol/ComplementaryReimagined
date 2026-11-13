@@ -130,9 +130,14 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
             vec2 textureRad = abs(texCoord - mc_midTexCoord.xy);
             vec2 origin = mc_midTexCoord.xy - textureRad;
             float lavaTextureRotation = 0.0;
+            bool grassSide = IsReflectionGrassSide(rawMat, normal);
 
-            if (mat == 10132) { // Grass Block Regular
-                if (texture2D(tex, mc_midTexCoord.xy).a < 0.5) return; // Grass Block Side Overlay
+            if (grassSide) { // Grass Block Side Overlay
+                if (texture2DLod(tex, mc_midTexCoord.xy, 0.0).a < 0.5) {
+                    StoreGrassSideOverlay(ivec3(voxelPos), round(normal), origin, textureRad.x,
+                                          GetReflectionFaceOrientation(round(normal), at_tangent));
+                    return;
+                }
             }
 
             if (mat == 10009 || mat == 10011 || IsReflectionCutoutCube(rawMat)) { // Leaves and cutout cubes
@@ -278,7 +283,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
                                  : mat == 10068 ? GetDefaultReflectionFaceOrientation(round(normal))
                                  : GetReflectionFaceOrientation(round(normal), at_tangent);
                 StoreFaceData(ivec3(voxelPos), round(normal), origin, textureRad.x, orientation,
-                              storeToAllFaces, storeToAllFacesExceptTop, scenePos);
+                              storeToAllFaces, storeToAllFacesExceptTop, scenePos, grassSide);
             }
         }
     }
