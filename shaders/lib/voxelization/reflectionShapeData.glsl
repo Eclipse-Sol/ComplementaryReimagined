@@ -55,23 +55,13 @@ uint GetShapeState(reflectionCellHandle cell) {
         MergeStampedWord(GetShapeStateWordIndex(GetSceneVoxelIndex(p)), bits, (shapeDataSSBO.captureFrame + 1u) << 12u, false);
     }
 
-    #ifdef MC_GL_ARB_shader_draw_parameters
-        #extension GL_ARB_shader_draw_parameters : enable
-    #endif
-    // Sodium sub-allocates sections
-    int GetShapeQuadCorner() {
-        #ifdef MC_GL_ARB_shader_draw_parameters
-            return (gl_VertexID - gl_BaseVertexARB) & 3;
-        #else
-            return gl_VertexID & 3;
-        #endif
-    }
-
     void UpdateReflectionShape(int rawMat, vec4 terrainTangent) {
         int corner = GetShapeQuadCorner();
         uint vertexAlpha = uint(round(clamp(glColor.a, 0.0, 1.0) * 255.0));
-        // Resolve defaults missing corners to 255, so this corner needs no record.
-        if ((corner & 1) != 0 && vertexAlpha == 255u) return;
+        // The AO-only path can omit fully bright secondary corners.
+        #if WORLD_SPACE_SMOOTH_LIGHTING <= 0
+            if ((corner & 1) != 0 && vertexAlpha == 255u) return;
+        #endif
         int family = GetReflectionShapeFamily(rawMat);
         vec3 center = PlayerToSceneVoxel(ModelToScenePos(GetBlockCenterModelPos()));
         if (any(lessThan(center, vec3(0))) || any(greaterThanEqual(center, vec3(sceneVoxelVolumeSize)))) return;
@@ -82,7 +72,11 @@ uint GetShapeState(reflectionCellHandle cell) {
         int voxelIndex = GetSceneVoxelIndex(cell);
         uint quadId = uint(gl_VertexID - corner) / 4u;
         uint uvCorner = uint(texCoord.x > mc_midTexCoord.x) | (uint(texCoord.y > mc_midTexCoord.y) << 1u);
-        uint vertexAO = vertexAlpha | (uvCorner << 8u);
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            uvec4 vertexAO = uvec4(PackReflectionCornerLighting(lmCoord, glColor.a, uvCorner, false), 0u, 0u, 0u);
+        #else
+            uint vertexAO = vertexAlpha | (uvCorner << 8u);
+        #endif
         if ((corner & 1) != 0) {
             uint index = AllocateShapeRecord(!selected);
             if (index >= shapeRecordCapacity) return;
@@ -243,11 +237,19 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
             return other.shading.w == (surface.shading.w | shapeFlagSecondary) && other.mapping.w == surface.mapping.w;
         }
 
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+        void MergeShapeCornerAO(uvec4 value, inout uvec4 quadAO, inout uint foundCorners) {
+            uint corner = (value.x >> 28u) & 3u;
+            quadAO[corner] = value.x;
+            foundCorners |= 1u << corner;
+        }
+        #else
         void MergeShapeCornerAO(uint value, inout uint quadAO, inout uint foundCorners) {
             uint corner = (value >> 8u) & 3u;
             quadAO = (quadAO & ~(255u << (corner * 8u))) | ((value & 255u) << (corner * 8u));
             foundCorners |= 1u << corner;
         }
+        #endif
     #endif
 
     void BuildReflectionShapeSurface(uint index, bool halo) {
@@ -333,7 +335,12 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                     return;
                 }
                 bool plane = (surface.shading.w & shapeFlagPlane) != 0u;
-                uint quadAO = 0xffffffffu, foundCorners = 0u;
+                #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                    uvec4 quadAO = uvec4(0u);
+                #else
+                    uint quadAO = 0xffffffffu;
+                #endif
+                uint foundCorners = 0u;
                 MergeShapeCornerAO(shapeAOSSBO.corners[index], quadAO, foundCorners);
                 uint aoOnlyFlags = (surface.shading.w & ~shapeFaceMask) | shapeFaceMask | shapeFlagSecondary;
                 uint aoNext = ReadShapeCaptureHead(cellIndex, halo);

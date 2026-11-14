@@ -40,8 +40,6 @@ void main() {
     shapeDataSSBO.allocationAttempts = 0u;
     shapeDataSSBO.previousVolumeOrigin = shapeDataSSBO.volumeOrigin;
     ivec3 origin = GetReflectionVolumeOrigin();
-    if (firstCapture || origin != shapeDataSSBO.previousVolumeOrigin.xyz || IsReflectionLavaRefreshFrame(frameCounter))
-        blockDataSSBO.lavaRefreshFrame = uint(frameCounter + 1);
     shapeDataSSBO.volumeOrigin = ivec4(origin, 0);
     shapeDataSSBO.captureFrame = captureFrame + 1u;
 
@@ -54,6 +52,9 @@ void main() {
     blockDataSSBO.regionStartIndices[selectedRegion] = writeStart;
     blockDataSSBO.faceAllocationAttempts = 0u;
     blockDataSSBO.grassCaptureCount = 0u;
+    #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+        blockDataSSBO.cornerCaptureCount = 0u;
+    #endif
 }
 #else
 #include "/lib/voxelization/reflectionVoxelVolume.glsl"
@@ -69,6 +70,9 @@ void main() {
         if (gl_WorkGroupID == uvec3(0u)) {
             blockDataSSBO.faceAllocationAttempts = 0u;
             blockDataSSBO.grassCaptureCount = 0u;
+            #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                blockDataSSBO.cornerCaptureCount = 0u;
+            #endif
             sweepGeneration = atomicAdd(blockDataSSBO.faceGeneration, 1u) + 1u;
         } else {
             sweepGeneration = atomicAdd(blockDataSSBO.faceGeneration, 0u);

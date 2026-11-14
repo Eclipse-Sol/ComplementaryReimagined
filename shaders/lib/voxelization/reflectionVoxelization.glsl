@@ -92,13 +92,53 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
 #endif
 
 #if defined SHADOW && defined VERTEX_SHADER
+    bool IsReflectionCaptureExcluded(int mat) {
+        return (   mat == 10056 // Lava Cauldron
+                || mat == 10404 // Sea Pickle
+                || mat == 10496 // Torch
+                || mat == 10500 // End Rod
+                || mat == 10508 // Chorus Flower:Alive
+                || mat == 10512 // Chorus Flower:Dead
+                || mat == 10528 // Soul Torch
+                || mat == 10556 // End Portal Frame:Active
+                || mat == 10572 // Dragon Egg
+                || mat == 10604 || mat == 10605 // Redstone Torch
+                || mat == 10632 // Cave Vines
+                || mat == 10644 // Powered Repeater, Powered Comparator
+                || mat == 10776 // Crimson Fungus, Warped Fungus
+                || mat == 10780 // Potted Crimson Fungus, Potted Warped Fungus
+                || mat == 10836 // Brewing Stand
+                || mat == 10884 // Weeping Vines
+                || mat == 10972 // Firefly Bush
+                || mat == 10976 // Open Eyeblossom
+                || mat == 10980 // Potted Open Eyeblossom
+                || abs(mat - 10562) <= 2 // Lantern & Soul Lantern
+                || abs(mat - 10599) <= 3 // Redstone Wire
+                || abs(mat - 10701) <= 3 // Non-Solid Sculk Stuff
+                || abs(mat - 10786) <= 2 // Calibrated Sculk Sensor
+                || abs(mat - 10911) <= 11 // Lit Candles & Candle Cakes
+                || mat == 10984 // Copper Torch
+                || mat == 10988); // Copper Lantern
+    }
+
+    #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+    void AppendReflectionCornerLighting(ivec3 cell, vec3 normal) {
+        if (maxOf(abs(normal)) < 0.999) return;
+        uint index = atomicAdd(blockDataSSBO.cornerCaptureCount, 1u);
+        if (index >= reflectionCornerCaptureCapacity) return;
+        uint word = uint(reflectionCornerCaptureBase) + 2u * index;
+        blockDataSSBO.words[word] = uint(GetSceneVoxelIndex(cell)) | (uint(GetReflectionFaceIndex(normal)) << 24u);
+        blockDataSSBO.words[word + 1u] = GetCapturedReflectionCornerLighting(normal);
+    }
+    #endif
+
     void UpdateLavaHeightMap() {
         if (!ReflectionStorageAvailable()) return;
-        #if WORLD_SPACE_SHAPES > 0
-            if (blockDataSSBO.lavaRefreshFrame != uint(frameCounter + 1)) return;
-        #endif
         vec3 center = PlayerToSceneVoxel(ModelToScenePos(GetBlockCenterModelPos()));
         if (any(lessThan(center, vec3(0.0))) || any(greaterThanEqual(center, vec3(sceneVoxelVolumeSize)))) return;
+        #if WORLD_SPACE_SHAPES > 0
+            if (!IsReflectionCellSelected(ivec3(center))) return;
+        #endif
 
         if (at_midBlock.y / 64.0 > 0.49) return;
         vec3 vertex = PlayerToSceneVoxel(ModelToScenePos(gl_Vertex.xyz));
@@ -109,6 +149,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
 
     void UpdateSceneVoxelMap(int rawMat, vec3 normal, vec3 position) {
         if (!ReflectionStorageAvailable()) return;
+        bool primaryVertex = (gl_VertexID & 3) == 0;
         int mat = GetReflectionMaterial(rawMat);
 
         vec3 scenePos = ModelToScenePos(GetBlockCenterModelPos());
@@ -134,6 +175,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
 
             if (grassSide) { // Grass Block Side Overlay
                 if (texture2DLod(tex, mc_midTexCoord.xy, 0.0).a < 0.5) {
+                    if (!primaryVertex) return;
                     StoreGrassSideOverlay(ivec3(voxelPos), round(normal), origin, textureRad.x,
                                           GetReflectionFaceOrientation(round(normal), at_tangent));
                     return;
@@ -235,33 +277,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
             }
 
             // Blocks to remove from reflections
-            if (mat == 10056 // Lava Cauldron
-                || mat == 10404 // Sea Pickle
-                || mat == 10496 // Torch
-                || mat == 10500 // End Rod
-                || mat == 10508 // Chorus Flower:Alive
-                || mat == 10512 // Chorus Flower:Dead
-                || mat == 10528 // Soul Torch
-                || mat == 10556 // End Portal Frame:Active
-                || mat == 10572 // Dragon Egg
-                || mat == 10604 || mat == 10605 // Redstone Torch
-                || mat == 10632 // Cave Vines
-                || mat == 10644 // Powered Repeater, Powered Comparator
-                || mat == 10776 // Crimson Fungus, Warped Fungus
-                || mat == 10780 // Potted Crimson Fungus, Potted Warped Fungus
-                || mat == 10836 // Brewing Stand
-                || mat == 10884 // Weeping Vines
-                || mat == 10972 // Firefly Bush
-                || mat == 10976 // Open Eyeblossom
-                || mat == 10980 // Potted Open Eyeblossom
-                || abs(mat - 10562) <= 2 // Lantern & Soul Lantern
-                || abs(mat - 10599) <= 3 // Redstone Wire
-                || abs(mat - 10701) <= 3 // Non-Solid Sculk Stuff
-                || abs(mat - 10786) <= 2 // Calibrated Sculk Sensor
-                || abs(mat - 10911) <= 11 // Lit Candles & Candle Cakes
-                || mat == 10984 // Copper Torch
-                || mat == 10988 // Copper Lantern
-            ) {
+            if (IsReflectionCaptureExcluded(mat)) {
                 return;
             }
 
@@ -270,6 +286,13 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
                     mat % 2 == 1 // Non-solids
                     || abs(mat - 5000) <= 4999 // Block entities that we treat as non-solid
                 )
+                return;
+            }
+
+            if (!primaryVertex) {
+                #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                    AppendReflectionCornerLighting(ivec3(voxelPos), normalize(normal));
+                #endif
                 return;
             }
 

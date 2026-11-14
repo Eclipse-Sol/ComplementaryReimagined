@@ -372,12 +372,13 @@ void main() {
             #ifdef PUDDLE_VOXELIZATION
                 UpdatePuddleVoxelMap(mat);
             #endif
-            #ifdef WSR_TERRAIN_CAPTURE
-                vec3 normal = mat3(shadowModelViewInverse) * gl_NormalMatrix * gl_Normal;
-                if (reflectionRefresh && (GetReflectionShapeFamily(rawMat) == 0 || WORLD_SPACE_SHAPES <= 0))
-                    UpdateSceneVoxelMap(rawMat, normal, position.xyz);
-            #endif
         }
+        #ifdef WSR_TERRAIN_CAPTURE
+            if (reflectionRefresh && (GetReflectionShapeFamily(rawMat) == 0 || WORLD_SPACE_SHAPES <= 0)) {
+                vec3 normal = mat3(shadowModelViewInverse) * gl_NormalMatrix * gl_Normal;
+                UpdateSceneVoxelMap(rawMat, normal, position.xyz);
+            }
+        #endif
 
         #if (defined WSR_TERRAIN_CAPTURE || defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT) && WORLD_SPACE_PLAYER_REF == 1
             UpdatePlayerVertexList(position.xyz);

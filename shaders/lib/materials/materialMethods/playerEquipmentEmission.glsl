@@ -23,6 +23,7 @@ float getPlayerEquipmentEmission(playerEquipmentHit hit, vec3 normal, float dith
 
     #define DURING_WORLDSPACE_REF
     #ifndef IPBR_COMPAT_MODE
+        #define WSR_EQUIPMENT_DEFINED_COMPAT_MODE
         #define IPBR_COMPAT_MODE
     #endif
     #undef DISTANT_LIGHT_BOKEH
@@ -34,6 +35,10 @@ float getPlayerEquipmentEmission(playerEquipmentHit hit, vec3 normal, float dith
     #undef atlasSize
     #undef tex
     #undef DURING_WORLDSPACE_REF
+    #ifdef WSR_EQUIPMENT_DEFINED_COMPAT_MODE
+        #undef IPBR_COMPAT_MODE
+        #undef WSR_EQUIPMENT_DEFINED_COMPAT_MODE
+    #endif
 
     if (emission > 0.0) albedo = color.rgb;
     return emission;

@@ -1,12 +1,15 @@
 // GGX area light approximation from Horizon Zero Dawn
 float GetNoHSquared(float radiusTan, float NoL, float NoV, float VoL) {
+    NoL = clamp(NoL, 0.0, 1.0);
+    NoV = clamp(NoV, 0.0, 1.0);
+    VoL = clamp(VoL, -1.0, 1.0);
     float radiusCos = 1.0 / sqrt(1.0 + radiusTan * radiusTan);
 
     float RoL = 2.0 * NoL * NoV - VoL;
     if (RoL >= radiusCos)
         return 1.0;
 
-    float rOverLengthT = radiusCos * radiusTan / sqrt(1.0 - RoL * RoL);
+    float rOverLengthT = radiusCos * radiusTan / sqrt(max(1.0 - RoL * RoL, 1e-8));
     float NoTr = rOverLengthT * (NoV - RoL * NoL);
     float VoTr = rOverLengthT * (2.0 * NoV * NoV - 1.0 - RoL * VoL);
 
@@ -18,7 +21,8 @@ float GetNoHSquared(float radiusTan, float NoL, float NoV, float VoL) {
     float xNum = q * (-0.5 * p + 0.25 * VoBr * NoLVTr);
     float xDenom = p * p + s * ((s - 2.0 * p)) + NoLVTr * ((NoL * radiusCos + NoV) * VoLVTr * VoLVTr +
                    q * (-0.5 * (VoLVTr + VoL * radiusCos) - 0.5));
-    float twoX1 = 2.0 * xNum / (xDenom * xDenom + xNum * xNum);
+    float rotationLength2 = xDenom * xDenom + xNum * xNum;
+    float twoX1 = rotationLength2 > 1e-20 ? 2.0 * xNum / rotationLength2 : 0.0;
     float sinTheta = twoX1 * xDenom;
     float cosTheta = 1.0 - twoX1 * xNum;
     NoTr = cosTheta * NoTr + sinTheta * NoBr;
@@ -28,18 +32,22 @@ float GetNoHSquared(float radiusTan, float NoL, float NoV, float VoL) {
     float newVoL = VoL * radiusCos + VoTr;
     float NoH = NoV + newNoL;
     float HoH = 2.0 * newVoL + 2.0;
-    return clamp(NoH * NoH / HoH, 0.0, 1.0);
+    return clamp(NoH * NoH / max(HoH, 1e-8), 0.0, 1.0);
 }
 
-float GGX(vec3 normalM, vec3 viewPos, vec3 lightVec, float NdotLmax0, float smoothnessG) {
+float GGX(vec3 normalM, vec3 viewPos, vec3 lightVec, float NdotLmax0, float smoothnessG, vec3 geoNormal) {
+    float dotNV = dot(normalM, -viewPos);
+    if (NdotLmax0 <= 0.0 || dot(geoNormal, lightVec) <= 0.0) return 0.0;
     smoothnessG = sqrt1(smoothnessG * 0.9 + 0.1);
     float roughnessP = (1.35 - smoothnessG);
     float roughness = pow2(pow2(roughnessP));
 
-    vec3 halfVec = normalize(lightVec - viewPos);
+    vec3 halfVec = lightVec - viewPos;
+    float halfLength2 = dot(halfVec, halfVec);
+    if (halfLength2 <= 1e-12) return 0.0;
+    halfVec *= inversesqrt(halfLength2);
 
-    float dotLH = clamp(dot(halfVec, lightVec), 0.0, 1.0);
-    float dotNV = dot(normalM, -viewPos);
+    float dotLH = clamp(dot(halfVec, lightVec), 1e-6, 1.0);
 
     #if WATER_REFLECT_QUALITY >= 2
         float dotNH = GetNoHSquared(0.01, NdotLmax0, dotNV, dot(-viewPos, lightVec));
@@ -52,7 +60,7 @@ float GGX(vec3 normalM, vec3 viewPos, vec3 lightVec, float NdotLmax0, float smoo
     float f0 = 0.05;
     float F = exp2((-5.55473 * dotLH - 6.98316) * dotLH) * (1.0 - f0) + f0;
 
-    float NdotLmax0M = sqrt3(NdotLmax0 * max0(dot(normal, lightVec)));
+    float NdotLmax0M = sqrt3(NdotLmax0 * max0(dot(geoNormal, lightVec)));
     float specular = max0(NdotLmax0M * D * F / pow2(dotLH));
     specular = specular / (0.125 * specular + 1.0);
 

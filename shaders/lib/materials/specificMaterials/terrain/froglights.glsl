@@ -2,12 +2,8 @@ noSmoothLighting = true; noDirectionalShading = true;
 lmCoordM = vec2(1.0, 0.0);
 
 #ifndef IPBR_COMPAT_MODE
-    #ifndef DURING_WORLDSPACE_REF
-        float blockRes = max(absMidCoordPos.x * atlasSize.x, 1.0);
-        vec2 signMidCoordPosM = abs((floor((signMidCoordPos + 1.0) * blockRes) + 0.5) / blockRes - 1.0);
-    #else
-        vec2 signMidCoordPosM = signMidCoordPos;
-    #endif
+    float blockRes = max(absMidCoordPos.x * atlasSize.x, 1.0);
+    vec2 signMidCoordPosM = abs((floor((signMidCoordPos + 1.0) * blockRes) + 0.5) / blockRes - 1.0);
     float value = 1.0 - max(signMidCoordPosM.x, signMidCoordPosM.y);
 #else
     float value = 0.3;

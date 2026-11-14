@@ -140,7 +140,7 @@ void DoTAA(inout vec3 color, inout vec3 temp, float z1) {
     float lViewPos1 = length(viewPos1);
 
     #ifdef ENTITY_TAA_NOISY_CLOUD_FIX
-        float cloudLinearDepth = texture2D(colortex5, texCoord).a;
+        float cloudLinearDepth = texture2D(colortex5, texCoord).r;
 
         if (pow2(cloudLinearDepth) * renderDistance < min(lViewPos1, renderDistance)) {
             // Material in question is obstructed by the cloud volume
@@ -200,7 +200,7 @@ void DoTAA(inout vec3 color, inout vec3 temp, float z1) {
         vec3 tempColor = texture2D(colortex2, prvCoord).rgb;
     #endif
 
-    if (tempColor == vec3(0.0) || any(isnan(tempColor))) { // Fixes the first frame and nans
+    if (tempColor == vec3(0.0) || any(isnan(tempColor)) || any(isinf(tempColor))) { // Fixes the first frame and invalid history
         temp = color;
         return;
     }

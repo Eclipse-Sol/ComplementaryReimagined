@@ -3,16 +3,17 @@ const int colortex0Format = R11F_G11F_B10F; //main color
 const int colortex1Format = RGB8_SNORM;     //half res normalM
 const int colortex2Format = RGB16F;         //taa
 const int colortex3Format = RGBA8;          //(cloud/water map on deferred/gbuffer) | translucentMult & bloom & final color
-const int colortex5Format = RGBA8;          //scene image for water reflections & volumetric cloud linear depth & volumetric light factor
+const int colortex5Format = R8;             //cloud linear depth & volumetric light factor
 const int colortex6Format = RGB8;           //smoothnessD & materialMask & skyLightFactor
 const int colortex7Format = RGBA16F;        //(cloud/water map on gbuffer) | reflection temporal image (rgb) & previous depth
 const int colortex8Format = RGBA16F;        //SSR results for WSR, topmost translucent opacity
+const int colortex9Format = R11F_G11F_B10F; //scene image for reflections
 
 const int colortex12Format = RGBA8;         //Improved Rain
 const int colortex13Format = R8;            //Entity linear depth for vl blending
 
 const int colortex18Format = R8;            //shadow for voxy chunks
-const int colortex19Format = RGBA8;         //scene image for voxy reflections
+const int colortex19Format = R11F_G11F_B10F; //scene image for voxy reflections
 */
 
 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
@@ -33,6 +34,7 @@ const bool colortex4Clear = false;
 const bool colortex5Clear = false;
 const bool colortex6Clear = true;
 const bool colortex7Clear = false;
+const bool colortex9Clear = false;
 
 const bool colortex12Clear = true;
 const bool colortex13Clear = true;

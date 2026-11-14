@@ -1,53 +1,48 @@
 #extension GL_ARB_shader_image_load_store : enable
 
 #include "/lib/voxelization/reflectionVoxelization.glsl"
-#include "/lib/lighting/minimumLighting.glsl"
 #include "/lib/materials/materialMethods/lavaRayTrace.glsl"
 #if WORLD_SPACE_SHAPES > 0
     #include "/lib/materials/materialMethods/shapeRayTrace.glsl"
     #include "/lib/materials/materialMethods/shapeSurfaceTrace.glsl"
 #endif
 
-#if WORLD_SPACE_PLAYER_REF == 1 && !defined WSR_TRACE_PREPASS
-    #include "/lib/materials/materialMethods/playerRayTracer.glsl"
+#ifdef WSR_LIGHTING_ATLAS_ACTIVE
+    #include "/lib/voxelization/reflectionLightingAtlasData.glsl"
 #endif
+#ifndef WSR_TRACE_PREPASS
+    #ifdef WSR_LIGHTING_ATLAS_ACTIVE
+        bool wsrAtlasLoaded = false;
+        bool wsrAtlasCacheable = false;
+        uint wsrAtlasFlags = 0u;
+        vec4 wsrAtlasBlockLight;
+        vec3 wsrAtlasLightDetail;
+        vec4 wsrAtlasSceneLight;
+        vec3 wsrAtlasShadow;
 
-#if defined OVERWORLD || defined END
-    #ifndef GBUFFERS_WATER
-        #include "/lib/lighting/shadowSampling.glsl"
-        #if defined DO_PIXELATION_EFFECTS && defined PIXELATED_SHADOWS
-            #include "/lib/misc/pixelation.glsl"
-        #endif
+        void ResetReflectionLightingAtlasState() {
+            wsrAtlasLoaded = false;
+            wsrAtlasCacheable = false;
+            wsrAtlasBlockLight = vec4(0.0);
+            wsrAtlasLightDetail = vec3(0.0);
+            wsrAtlasSceneLight = vec4(0.0);
+            wsrAtlasShadow = vec3(1.0);
+        }
+    #endif
+    #define WSR_HIT_LIGHTING
+    #include "/lib/lighting/mainLighting.glsl"
+    #undef WSR_HIT_LIGHTING
+
+    #ifdef WSR_LIGHTING_ATLAS_ACTIVE
+        #include "/lib/materials/materialMethods/reflectionLightingAtlas.glsl"
     #endif
 
-    #if SHADOW_SMOOTHING == 4 || SHADOW_QUALITY == 0
-        const float offset = 0.00098;
-    #elif SHADOW_SMOOTHING == 3
-        const float offset = 0.00075;
-    #elif SHADOW_SMOOTHING == 2
-        const float offset = 0.0005;
-    #elif SHADOW_SMOOTHING == 1
-        const float offset = 0.0003;
+    #if WORLD_SPACE_PLAYER_REF == 1
+        #include "/lib/materials/materialMethods/playerRayTracer.glsl"
     #endif
-#endif
-
-#if HELD_LIGHTING_MODE >= 1
-    #include "/lib/lighting/heldLighting.glsl"
-#endif
-
-#ifdef CLOUD_SHADOWS
-    #include "/lib/lighting/cloudShadows.glsl"
-#endif
-
-#ifdef LIGHT_COLOR_MULTS
-    #include "/lib/colors/colorMultipliers.glsl"
-#endif
-#if defined MOON_PHASE_INF_LIGHT || defined MOON_PHASE_INF_REFLECTION
-    #include "/lib/colors/moonPhaseInfluence.glsl"
-#endif
-
-#if defined WSR_PLAYER_EQUIPMENT && defined IPBR && !defined WSR_TRACE_PREPASS
-    #include "/lib/materials/materialMethods/playerEquipmentEmission.glsl"
+    #if defined WSR_PLAYER_EQUIPMENT && defined IPBR
+        #include "/lib/materials/materialMethods/playerEquipmentEmission.glsl"
+    #endif
 #endif
 
 vec2 GetLocalTexCoord(vec3 local, vec3 normal) {
@@ -166,22 +161,11 @@ float GetVoxelSpaceAO(ivec3 voxelPos, ivec3 normal, vec2 localTexCoord, ivec3 st
 }
 
 #ifdef WSR_SPLIT_ENABLED
-    // ids.x: bits 0-23 voxel index, 24-26 face index (6 = none), 27-31 low material bits.
-    // ids.y: bits 0-9 high material bits, 10-30 captured-surface index.
-    // ids.z: hit distance as float bits.
-    //
-    // Lava blocks set ids.y[31] and imply material 10068, so they reuse the material and surface
-    // bits (and ids.w) to store the lava surface gradient instead
-    struct reflectionHitRecord {
-        uvec4 ids;
-    };
-    layout(std430, binding = 5) buffer reflectionHitBuffer {
-        reflectionHitRecord hits[];
-    } hitBuffer;
+    #include "/lib/voxelization/reflectionHitRecord.glsl"
 
     uint GetReflectionPixelIndex() {
-        ivec2 size = ivec2(vec2(viewWidth, viewHeight) * WSR_REFLECTION_SCALE);
-        return uint(ivec2(gl_FragCoord.xy).x + size.x * ivec2(gl_FragCoord.xy).y);
+        ivec2 pixel = ivec2(gl_FragCoord.xy);
+        return uint(pixel.x + GetReflectionBufferSize().x * pixel.y);
     }
 #endif
 
@@ -237,7 +221,7 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         #ifdef WSR_TRACE_PREPASS
             return vec4(1.0);
         #else
-            faceData = GetLavaFaceData(cellRef, lavaTextureRotation);
+            faceData = GetLavaFaceData(cellRef, lavaTextureRotation, faceIndex);
             localTexCoord = 0.5 + lavaTextureRotation * (localTexCoord - 0.5);
         #endif
     } else {
@@ -251,6 +235,10 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         localTexCoord = clamp(0.5 + OrientReflectionFaceVector(localTexCoord - 0.5, faceOrientation), 0.0, 1.0);
     }
     if (faceData.textureBounds.z < 1e-6) return vec4(-1.0);
+
+    #ifdef WAVING_LAVA
+        if (mat == 10068u) faceData.glColor = min(faceData.glColor, vec3(0.9));
+    #endif
 
     vec2 textureRadVec2 = 0.5 * GetReflectionTextureScale(faceData.textureBounds.z, textureSizeAtlas);
     vec2 textureCoord = faceData.textureBounds.xy + 2.0 * textureRadVec2 * localTexCoord;
@@ -323,200 +311,112 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
                                                          faceOrientation, normal, textureGradX, textureGradY, textureSizeAtlas, dither);
         }
 
-        bool noSmoothLighting = false, noDirectionalShading = false;
+        float AO = 1.0;
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            uvec4 reflectionCorners = uvec4(0u);
+            bool needsVoxelAO = true;
+            if (faceIndex != 0xffffffffu) {
+                reflectionCorners = LoadReflectionFaceCorners(faceIndex);
+                needsVoxelAO = (reflectionCorners.x & reflectionCorners.y & reflectionCorners.z & reflectionCorners.w & 0x80000000u) == 0u;
+            }
+        #endif
+        #if VANILLAAO_I > 0 || WORLD_SPACE_SMOOTH_LIGHTING > 0
+            #if WORLD_SPACE_SHAPES > 0
+                if (family != WSR_FAMILY_NONE) {
+                    ivec3 owner = GetShapeOwnerCell(shapeDataSSBO.records[surfaceIndex], voxelPos, storageOrigin);
+                    #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                        vec3 cornerLighting = GetReflectionShapeLighting(surfaceIndex, PlayerToSceneVoxel(playerPos) - vec3(owner), vec3(faceData.lightmap, 1.0));
+                        faceData.lightmap = cornerLighting.xy;
+                        AO = cornerLighting.z;
+                    #else
+                        AO = GetReflectionShapeAO(surfaceIndex, PlayerToSceneVoxel(playerPos) - vec3(owner));
+                    #endif
+                } else
+            #endif
+            #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                if (needsVoxelAO)
+            #endif
+            AO = GetVoxelSpaceAO(voxelPos, ivec3(normal), faceTexCoord, storageOrigin);
+        #endif
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            if (faceIndex != 0xffffffffu) {
+                uint cornerBits = reflectionCorners.x | reflectionCorners.y | reflectionCorners.z | reflectionCorners.w;
+                vec3 cornerLighting = InterpolateReflectionCornerLighting(reflectionCorners, mat == 10068u ? faceTexCoord : localTexCoord,
+                                                                          (cornerBits & 0x40000000u) != 0u, vec3(faceData.lightmap, AO));
+                faceData.lightmap = cornerLighting.xy;
+                AO = cornerLighting.z;
+            }
+        #endif
+
+        bool noSmoothLighting = false, noDirectionalShading = false, noVanillaAO = false, centerShadowBias = false;
         int subsurfaceMode = 0;
         float emission = 0.0, NdotU = normal.y, NdotE = normal.x, snowMinNdotU = 0.0;
-        vec2 lmCoordM = vec2(1.0);
+        float smoothnessG = 0.0, highlightMult = 1.0;
+        vec2 lmCoordM = faceData.lightmap;
+        vec3 normalM = normalize(mat3(gbufferModelView) * normal), geoNormal = normalM;
+        float lViewPos = length(playerPos);
+        vec3 nViewPos = normalize(mat3(gbufferModelView) * rayDir);
+        vec3 viewPos = nViewPos * max(lViewPos, 1e-6);
+        vec2 signMidCoordPos = localTexCoord * 2.0 - 1.0;
         vec3 shadowMult = vec3(1.0), maRecolor = vec3(0.0);
-        vec4 glColor = vec4(faceData.glColor, 1.0);
+        vec4 glColor = vec4(faceData.glColor, AO);
         #ifdef IPBR
-            float lViewPos = length(playerPos);
+            vec2 atlasSize = textureSizeAtlas;
+            vec2 texCoord = textureCoord;
             vec2 absMidCoordPos = vec2(textureRadVec2);
             vec2 midCoord = faceData.textureBounds.xy + 2.0 * textureRadVec2 * vec2(0.5);
-            vec2 signMidCoordPos = localTexCoord * 2.0 - 1.0;
-            bool noVanillaAO = false, centerShadowBias = false, noGeneratedNormals = false, doTileRandomisation = true;
+            bool noGeneratedNormals = false, doTileRandomisation = true;
             float smoothnessD = 0.0, materialMask = 0.0;
-            float smoothnessG = 0.0, highlightMult = 1.0, noiseFactor = 1.0, snowFactor = 1.0, noPuddles = 0.0;
+            float noiseFactor = 1.0, snowFactor = 1.0, noPuddles = 0.0;
             vec2 lmCoord = faceData.lightmap;
-            vec3 normalM = normal, geoNormal = normal;
 
             #define DURING_WORLDSPACE_REF
             #define WSR_TERRAIN_SHADING
-                #ifndef IPBR_COMPAT_MODE
-                    #define IPBR_COMPAT_MODE
-                #endif
+                #define tex textureAtlas
                 #undef DISTANT_LIGHT_BOKEH
                 #include "/lib/materials/materialHandling/terrainIPBR.glsl"
+                #undef tex
             #undef DURING_WORLDSPACE_REF
             #undef WSR_TERRAIN_SHADING
         #else
-            if (mat == 10009 || mat == 10011) { // Leaves
+            if (mat == 10001) {
+                noDirectionalShading = true;
+            } else if (mat == 10009 || mat == 10011) { // Leaves
                 #include "/lib/materials/specificMaterials/terrain/leaves.glsl"
             } else if (mat == 10005 || mat == 10017 || mat == 10021) { // Foliage
                 subsurfaceMode = 1, noSmoothLighting = true, noDirectionalShading = true;
             } else if (mat == 11009) { // Vine, Pale Hanging Moss
-                subsurfaceMode = 3, noSmoothLighting = true;
-            }
+                subsurfaceMode = 3, centerShadowBias = true, noSmoothLighting = true;
+            } else if (mat == 10028) { // Modded light sources
+                noSmoothLighting = true, noDirectionalShading = true;
+                emission = GetLuminance(color.rgb) * 2.5;
+            } else if (lmCoordM.x > 0.99999) lmCoordM.x = 0.95;
         #endif
 
-        vec3 worldLightVec = mat3(gbufferModelViewInverse) * lightVec;
-        float NdotL = dot(normal, worldLightVec);
-        #ifdef SIDE_SHADOWING
-            float lightingNdotL = max0(NdotL + 0.4) * 0.714;
-
-            #ifdef END
-                lightingNdotL = sqrt3(lightingNdotL);
+        #ifdef WSR_LIGHTING_ATLAS_ACTIVE
+            wsrAtlasLoaded = false;
+            wsrAtlasFlags = GetReflectionLightingFlags(noSmoothLighting, noDirectionalShading, noVanillaAO, centerShadowBias);
+            wsrAtlasCacheable = subsurfaceMode == 0 && all(equal(shadowMult, vec3(1.0)))
+                               && all(equal(normalM, geoNormal));
+            #ifndef WSR_ATLAS_BAKE
+                if (family == WSR_FAMILY_NONE && wsrAtlasCacheable) {
+                    uvec4 key = GetReflectionLightingKey(uint(cellRef.storageIndex), mat,
+                        uint(GetReflectionFaceIndex(normal)), cellRef.regionGeneration);
+                    wsrAtlasLoaded = LoadReflectionLightingAtlas(key, faceTexCoord, wsrAtlasFlags);
+                }
             #endif
-        #else
-            float lightingNdotL = max0(NdotL);
         #endif
-        if (subsurfaceMode != 0) lightingNdotL = 1.0;
-        vec3 lightHighlight = vec3(0.0);
-
-        #ifndef NETHER
-            vec3 shadow = shadowMult;
-            if (lightingNdotL > 0.0001) {
-                float shadowLength = shadowDistance * 0.9166667 - length(playerPos); //consistent08JJ622
-                float lightmapYM = smoothstep1(faceData.lightmap.y);
-                float subsurfaceHighlight = 0.0;
-                vec3 subsurfaceShadowFallback = shadowMult;
-                if (subsurfaceMode != 0) {
-                    #ifdef OVERWORLD
-                        float skyLightShadowMult = pow2(pow2(pow2(faceData.lightmap.y)));
-                        float shadowMixerM = pow2(clamp01(shadowLength / 16.0));
-                        if (subsurfaceMode == 1) skyLightShadowMult *= mix(0.6 + 0.3 * pow2(noonFactor), 1.0, shadowMixerM);
-                        else skyLightShadowMult *= mix(NdotL * 0.4999 + 0.5, 1.0, shadowMixerM);
-                        subsurfaceShadowFallback *= skyLightShadowMult;
-                    #endif
-                    shadow = subsurfaceShadowFallback;
-                }
-                if (shadowLength > 0.000001) {
-                    float distanceBias = 0.12 + 0.0008 * pow(dot(playerPos, playerPos), 0.75);
-                    vec3 bias = normal * distanceBias * (2.0 - 0.95 * max0(NdotL));
-                    vec3 shadowPlayerPos = playerPos;
-                    if (subsurfaceMode == 1) {
-                        #ifdef OVERWORLD
-                            vec3 center = floor(playerPos + cameraPosition + normal * 0.01) - cameraPosition + 0.5;
-                            shadowPlayerPos = mix(center, playerPos, 0.5 + 0.5 * lightmapYM);
-                        #endif
-                    } else {
-                        if (subsurfaceMode == 2) {
-                            bias *= vec3(0.0, 0.0, -0.5);
-                            bias.z += 0.25 * (localTexCoord.x * 2.0 - 1.0) * NdotE;
-                        }
-                        shadowPlayerPos += bias;
-                    }
-                    vec3 shadowPos = GetShadowPos(shadowPlayerPos);
-                    float shadowOffset = offset;
-                    bool leaves = subsurfaceMode == 2;
-                    if (subsurfaceMode == 1 || leaves) {
-                        shadowOffset = 0.0005235 * lightmapYM + 0.0009765;
-                        if (leaves) {
-                            shadowPos.z -= 0.000175 * lightmapYM;
-                            #ifndef SHADOW_FILTERING
-                                lightingNdotL = mix(NdotL, lightingNdotL, 0.5);
-                            #endif
-                        } else {
-                            shadowPos.z -= max0(NdotL * 0.0001) * lightmapYM;
-                            #ifndef SHADOW_FILTERING
-                                shadowPos.z -= 0.0002;
-                            #endif
-                        }
-                        // The reflected ray replaces the camera view direction used by terrain SSS
-                        float VdotL = dot(rayDir, worldLightVec);
-                        subsurfaceHighlight = pow(max0(VdotL), 10.0) * float(isEyeInWater == 0) * (leaves ? 0.6 : 0.8);
-                    }
-                    int shadowSamples = 2;
-
-                    shadow = GetShadow(shadowPos, faceData.lightmap.y, shadowOffset, shadowSamples, leaves, playerPos);
-                    if (subsurfaceMode != 0) {
-                        float shadowMixer = clamp01(shadowLength / 16.0);
-                        shadow = mix(subsurfaceShadowFallback, shadow * shadowMult, shadowMixer);
-                        subsurfaceHighlight *= shadowMixer;
-                    }
-                }
-                #ifdef LIGHT_HIGHLIGHT
-                    lightHighlight = shadow * (max0(lightingNdotL * shadowTime) * subsurfaceHighlight);
-                #endif
-            }
-            shadow *= dot(shadow, vec3(0.33333));
-        #else
-            vec3 shadow = vec3(1.0);
-        #endif
-
-        #ifdef CLOUD_SHADOWS
-            float cloudShadow = GetCloudShadow(playerPos);
-            shadow *= cloudShadow;
-            lightHighlight *= cloudShadow;
-        #endif
-
-        faceData.lightmap = pow2(pow2(faceData.lightmap));
-        float AO;
-        #if WORLD_SPACE_SHAPES > 0
-            if (family != WSR_FAMILY_NONE) {
-                #if VANILLAAO_I > 0
-                    ivec3 owner = GetShapeOwnerCell(shapeDataSSBO.records[surfaceIndex], voxelPos, storageOrigin);
-                    AO = pow(GetReflectionShapeAO(surfaceIndex, PlayerToSceneVoxel(playerPos) - vec3(owner)), VANILLAAO_I * 0.01);
-                    #ifdef IPBR
-                        if (noVanillaAO) AO = 1.0;
-                    #endif
-                #else
-                    AO = 1.0;
-                #endif
+        #if defined WSR_LIGHTING_ATLAS_ACTIVE && !defined WSR_ATLAS_BAKE
+            if (wsrAtlasLoaded) {
+                ApplyReflectionLightingAtlas(color, playerPos, viewPos, geoNormal, normalM, lmCoordM,
+                                             smoothnessG, highlightMult, emission);
             } else
         #endif
-        AO = GetVoxelSpaceAO(voxelPos, ivec3(normal), faceTexCoord, storageOrigin);
-        float directionalShading = noDirectionalShading ? 1.0 : (NdotU + 1.0) * 0.25 + 0.5;
-
-        vec3 centerPlayerPos = floor(playerPos + cameraPosition + normal * 0.01) - cameraPosition + 0.5;
-        vec3 playerPosM = mix(centerPlayerPos, playerPos, (AO - 0.8) / 0.2);
-        vec3 voxelPosM = SceneToVoxel(playerPosM);
-             voxelPosM = clamp01(voxelPosM / vec3(voxelVolumeSize));
-        vec4 lightVolume = GetLightVolume(voxelPosM);
-             lightVolume = max(lightVolume, vec4(0.000001));
-        vec3 specialLighting = 0.8 * pow(GetLuminance(lightVolume.rgb), 0.25) * DoLuminanceCorrection(pow(lightVolume.rgb, vec3(0.3)));
-        if (noSmoothLighting == true) specialLighting *= 0.6;
-
-        vec3 minLighting = 0.8 * sqrt(GetMinimumLighting(faceData.lightmap.y));
-
-        #if HELD_LIGHTING_MODE >= 1
-            vec3 heldLighting = GetHeldLighting(playerPos, color.rgb, emission);
-            specialLighting = sqrt(pow2(specialLighting) + sqrt(heldLighting));
-        #endif
-
-        #ifdef OVERWORLD
-            float ambientMult = 0.9 * faceData.lightmap.y;
-            float lightMult = (1.1 + 0.25 * subsurfaceMode) * lightingNdotL * shadowTime;
-            lightMult *= 1.0 + abs(NdotE) * 0.25;
-            specialLighting *= 1.0 - faceData.lightmap.y * sunFactor;
-        #else
-            float ambientMult = 1.0;
-            float lightMult = 1.0 * lightingNdotL * shadowTime;
-        #endif
-
-        vec3 sceneLighting = ambientMult * ambientColor + lightMult * lightColor * shadow;
-        #ifdef LIGHT_COLOR_MULTS
-            lightColorMult = GetLightColorMult();
-            sceneLighting *= lightColorMult;
-        #endif
-        #ifdef MOON_PHASE_INF_LIGHT
-            sceneLighting *= moonPhaseInfluence;
-        #endif
-
-        vec3 lighting = sceneLighting + specialLighting * XLIGHT_I + minLighting;
-        lighting = lighting * AO * directionalShading + emission * 0.8;
-
-        #ifdef LIGHT_HIGHLIGHT
-            lightHighlight *= normalize(pow(lightColor, vec3(0.37))) * (0.3 + 1.5 * sunVisibility2) * (1.0 - 0.85 * rainFactor);
-            #ifdef LIGHT_COLOR_MULTS
-                lightHighlight *= lightColorMult;
-            #endif
-            #ifdef MOON_PHASE_INF_REFLECTION
-                lightHighlight *= pow2(moonPhaseInfluence);
-            #endif
-        #endif
-
-        return vec4(color.rgb * lighting + lightHighlight + maRecolor, GetReflectionVolumeFade(playerPos));
+        DoWorldSpaceLighting(color, shadowMult, playerPos, viewPos, lViewPos, geoNormal, normalM, dither,
+                             normal, lmCoordM, noSmoothLighting, noDirectionalShading, noVanillaAO,
+                             centerShadowBias, subsurfaceMode, smoothnessG, highlightMult, emission,
+                             glColor, signMidCoordPos);
+        return vec4(color.rgb + maRecolor, GetReflectionVolumeFade(playerPos));
     #endif
 }
 
@@ -586,9 +486,9 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
     #if defined WSR_SPLIT_ENABLED && !defined WSR_TRACE_PREPASS
         uint pixel = GetReflectionPixelIndex();
         reflectionHitRecord record = hitBuffer.hits[pixel];
-        bool lava = (record.ids.y & 0x80000000u) != 0u;
-        uint material = lava ? 10068u : (record.ids.x >> 27u) | ((record.ids.y & 1023u) << 5u);
-        uint surfaceIndex = lava ? 0u : record.ids.y >> 10u;
+        bool lava = IsReflectionHitLava(record.ids);
+        uint material = GetReflectionHitMaterial(record.ids);
+        uint surfaceIndex = GetReflectionHitSurface(record.ids);
         traceLength = uintBitsToFloat(record.ids.z);
         if (material == 0u) {
             traceLength = 999999.0;
@@ -597,7 +497,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
         ivec3 cell = GetSceneVoxelPosition(record.ids.x & shapeVoxelIndexMask, storageOrigin);
         reflectionCellHandle cellRef = reflectionCellHandle(int(record.ids.x & shapeVoxelIndexMask),
                                                             GetReflectionCellGeneration(cell, packedRegionOrigin));
-        uint faceIndex = (record.ids.x >> 24u) & 7u;
+        uint faceIndex = GetReflectionHitFace(record.ids);
         vec3 normal = faceIndex == 6u ? vec3(0.0) : GetShapeFaceNormal(int(faceIndex));
         vec3 surfaceNormal = normal;
         int family = GetReflectionShapeFamily(int(material));
@@ -838,17 +738,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                     uint pixel = GetReflectionPixelIndex();
                     uint cell = selectedCellIndex;
                     uint faceIndex = all(equal(selectedNormal, vec3(0.0))) ? 6u : uint(GetReflectionFaceIndex(selectedNormal));
-                    uvec4 ids = uvec4(
-                        cell | (faceIndex << 24u) | ((selectedMaterial & 31u) << 27u),
-                        (selectedMaterial >> 5u) | (selectedSurface << 10u), floatBitsToUint(traceLength), 0u
-                    );
-                    if (selectedMaterial == 10068u) {
-                        uint gx = floatBitsToUint(wsrLavaGradient.x);
-                        ids = uvec4(
-                            cell | (faceIndex << 24u) | ((gx >> 31u) << 27u), 0x80000000u | (gx & 0x7fffffffu),
-                            ids.z, floatBitsToUint(wsrLavaGradient.y)
-                        );
-                    }
+                    uvec4 ids = PackReflectionHit(cell, faceIndex, selectedMaterial, selectedSurface, traceLength, wsrLavaGradient);
                     hitBuffer.hits[pixel].ids = ids;
                     return vec4(0.0);
                 #endif

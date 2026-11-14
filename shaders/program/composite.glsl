@@ -8,7 +8,10 @@
 //////////Fragment Shader//////////Fragment Shader//////////Fragment Shader//////////
 #ifdef FRAGMENT_SHADER
 
-#ifdef WSR_TRACE_PREPASS
+#ifdef WSR_ATLAS_BAKE
+    vec2 texCoord = vec2(0.0);
+    vec3 sunVec = GetSunVector();
+#elif defined WSR_TRACE_PREPASS
     vec2 texCoord;
     vec3 sunVec = GetSunVector();
     layout(local_size_x = 4, local_size_y = 8) in;
@@ -23,7 +26,7 @@
 #endif
 
 #ifdef END
-    #ifdef WSR_TRACE_PREPASS
+    #if defined WSR_TRACE_PREPASS || defined WSR_ATLAS_BAKE
         float vlFactor = 0.0;
     #else
         flat in float vlFactor;
@@ -31,7 +34,7 @@
 #endif
 
 //Pipeline Constants//
-const bool colortex5MipmapEnabled = true;
+const bool colortex9MipmapEnabled = true;
 
 //Common Variables//
 vec3 upVec = normalize(gbufferModelView[1].xyz);
@@ -93,12 +96,16 @@ float GetLinearDepth(float depth) {
 #endif
 
 //Program//
+#ifdef WSR_ATLAS_BAKE
+    #include "/program/bake_reflection_lighting.glsl"
+#else
 void main() {
     #ifdef WSR_SPLIT_ENABLED
-        ivec2 wsrSize = ivec2(view * WSR_REFLECTION_SCALE);
+        ivec2 wsrSize = GetReflectionBufferSize();
         vec2 wsrPixelScale = view / vec2(wsrSize);
         #ifdef WSR_TRACE_PREPASS
             if (any(greaterThanEqual(ivec2(gl_GlobalInvocationID.xy), wsrSize))) return;
+            hitBuffer.hits[GetReflectionPixelIndex()].ids = uvec4(0u);
         #endif
         texCoord = gl_FragCoord.xy / vec2(wsrSize);
         ivec2 texelCoord = ivec2(gl_FragCoord.xy * wsrPixelScale);
@@ -173,7 +180,6 @@ void main() {
 
         if (abs(fresnelM - 0.5) < 0.5) { // 0.0 fresnel doesnt need ref calculations, and 1.0 fresnel basically means error
             #ifdef WSR_TRACE_PREPASS
-                hitBuffer.hits[GetReflectionPixelIndex()].ids = uvec4(0u);
                 #if WATER_REFLECT_QUALITY >= 1
                     if (z0 != z1) {
                         ivec2 p = ivec2(gl_GlobalInvocationID.xy), quad = p & ~ivec2(1);
@@ -272,7 +278,7 @@ void main() {
                             - 10 * length(prevRefCurrentPosHeuristic.xy - clamp01(prevRefCurrentPosHeuristic.xy))
                         );
 
-                        reflectOutput.rgb = mix(prevRef.rgb, reflectOutput.rgb, min1(minBlendFactor / prevValid));
+                        reflectOutput.rgb = BlendReflectionHistory(reflectOutput.rgb, prevRef, min1(minBlendFactor / prevValid));
                         reflectOutput.a = linearZ1;
                     }
                 }
@@ -282,7 +288,7 @@ void main() {
 
     /* DRAWBUFFERS:7 */
     #ifndef WSR_TRACE_PREPASS
-        gl_FragData[0] = reflectOutput;
+        gl_FragData[0] = SanitizeReflection(reflectOutput);
     #endif
 
     // same check as #ifdef PBR_REFLECTIONS but for Optifine to understand:
@@ -293,6 +299,8 @@ void main() {
         #endif
     #endif
 }
+
+#endif
 
 #endif
 
@@ -328,7 +336,7 @@ void main() {
     sunVec = GetSunVector();
 
     #ifdef END
-        vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).a;
+        vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).r;
     #endif
 }
 

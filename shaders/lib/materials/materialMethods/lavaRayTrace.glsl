@@ -3,15 +3,20 @@
 #endif
 
 vec4 GetLavaCornerHeights(ivec3 voxelPos) {
-    return vec4(
-        GetLavaCornerHeight(voxelPos),
-        GetLavaCornerHeight(voxelPos + ivec3(1, 0, 0)),
-        GetLavaCornerHeight(voxelPos + ivec3(0, 0, 1)),
-        GetLavaCornerHeight(voxelPos + ivec3(1, 0, 1))
-    );
+    #if WORLD_SPACE_SHAPES > 0
+        return GetCapturedLavaCornerHeights(voxelPos);
+    #else
+        return vec4(
+            GetLavaCornerHeight(voxelPos),
+            GetLavaCornerHeight(voxelPos + ivec3(1, 0, 0)),
+            GetLavaCornerHeight(voxelPos + ivec3(0, 0, 1)),
+            GetLavaCornerHeight(voxelPos + ivec3(1, 0, 1))
+        );
+    #endif
 }
 
 float IntersectLavaSurface(vec3 localPos, vec3 rayDir, vec4 heights, float maxDist, out vec3 surfaceNormal) {
+    if (any(lessThan(heights, vec4(0.0)))) return -1.0;
     vec2 slope = vec2(heights.y - heights.x, heights.z - heights.x);
     float twist = heights.x - heights.y - heights.z + heights.w;
     float height = heights.x + dot(slope, localPos.xz) + twist * localPos.x * localPos.z;

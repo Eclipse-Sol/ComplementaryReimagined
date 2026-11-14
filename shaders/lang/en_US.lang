@@ -158,6 +158,9 @@ screen.BLOCKLIGHT_SETTINGS.comment=Settings to adjust the lighting emitted from 
 screen.MOON_PHASE_INF_SETTINGS=Moon Phase Influence
 screen.MOON_PHASE_INF_SETTINGS.comment=Settings to determine how different moon phases affect the night lighting.
 
+screen.WSR_SETTINGS=World-Space Reflections
+screen.WSR_SETTINGS.comment=Settings for world-space reflections. Requires Advanced Color Tracing.
+
 screen.ACT_FEATURES_SETTINGS=ACT Exclusive Features §e[*]§r
 screen.ACT_FEATURES_SETTINGS.comment=Settings that are about features exclusive to Advanced Color Tracing. §e[*]§r These features only work if Advanced Color Tracing is on in Performance Settings and your system supports it.
 
@@ -1210,3 +1213,17 @@ value.WSR_REBUILD_PERCENT.12.5=12.5% (8 frames)
 value.WSR_REBUILD_PERCENT.25.0=25% (4 frames)
 value.WSR_REBUILD_PERCENT.50.0=50% (2 frames)
 value.WSR_REBUILD_PERCENT.100.0=100% (every frame)
+
+option.WORLD_SPACE_LIGHTING_ATLAS=WSR Lighting Atlas
+option.WORLD_SPACE_LIGHTING_ATLAS.comment=Reuses diffuse lighting between WSR rebuilds on native block faces.
+value.WORLD_SPACE_LIGHTING_ATLAS.-1=OFF
+value.WORLD_SPACE_LIGHTING_ATLAS.1=ON
+option.WSR_LIGHTING_RES=WSR Lighting Tile Resolution
+option.WSR_LIGHTING_RES.comment=Lighting samples per block face.
+value.WSR_LIGHTING_RES.8=8x8
+value.WSR_LIGHTING_RES.16=16x16
+
+option.WORLD_SPACE_SMOOTH_LIGHTING=WSR Smooth Lighting
+option.WORLD_SPACE_SMOOTH_LIGHTING.comment=Smooths lighting and ambient occlusion in WSR block faces.
+value.WORLD_SPACE_SMOOTH_LIGHTING.-1=OFF
+value.WORLD_SPACE_SMOOTH_LIGHTING.1=ON

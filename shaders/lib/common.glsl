@@ -31,6 +31,9 @@
     #define COLORED_LIGHTING 0 //[128 192 256 384 512 768 1024]
     #define WORLD_SPACE_REFLECTIONS -1 //[-1 1]
     #define WORLD_SPACE_SHAPES 1 //[-1 1]
+    #define WORLD_SPACE_SMOOTH_LIGHTING 1 //[-1 1]
+    #define WORLD_SPACE_LIGHTING_ATLAS -1 //[-1 1]
+    #define WSR_LIGHTING_RES 16 //[8 16]
     #define WSR_REBUILD_PERCENT 12.5 //[5.0 10.0 12.5 25.0 50.0 100.0]
 
     #include "/lib/voxelization/reflectionShapeDefinitions.glsl"
@@ -577,7 +580,7 @@
             #define SKY_EFFECT_REFLECTION_OPAQUE
         #endif
         #define REFLECTION_BLUR_DEPTH_CHECK
-        #define ACT_CORNER_LEAK_FIX_FOR_WSR
+        #define ACT_CORNER_LEAK_FIX_ALL_PASSES
         #define ANISOTROPIC_FILTER_ON_TRANSLUCENTS
     #endif
 
@@ -841,7 +844,12 @@
     #endif
 
     #ifdef FRAGMENT_SHADER
-        ivec2 texelCoord = ivec2(gl_FragCoord.xy);
+        #ifdef WSR_ATLAS_BAKE
+            // Intel's compiler crashes on global initializers over non-const globals.
+            ivec2 texelCoord;
+        #else
+            ivec2 texelCoord = ivec2(gl_FragCoord.xy);
+        #endif
     #endif
 
     float cloudHeightM = isnan(cloudHeight) ? 192.0 : cloudHeight; // iris returns "nan" if there are no clouds
@@ -895,4 +903,8 @@
     #define WSR_REFLECTION_SCALE REFLECTION_RES
 #else
     #define WSR_REFLECTION_SCALE 1.0
+#endif
+
+#if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0 && WORLD_SPACE_LIGHTING_ATLAS > 0 && BLOCKLIGHT_FLICKERING == 0 && RP_MODE <= 1 && (BLOCK_REFLECT_QUALITY >= 2 || WATER_REFLECT_QUALITY >= 1)
+    #define WSR_LIGHTING_ATLAS_ACTIVE
 #endif

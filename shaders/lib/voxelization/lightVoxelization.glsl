@@ -38,8 +38,8 @@
     vec4 GetComplexLightVolume(vec3 pos, sampler3D ff_sampler) {
         vec4 lightVolume = vec4(0.0);
 
-        #ifndef ACT_CORNER_LEAK_FIX_FOR_WSR
-            #if defined COMPOSITE || defined COMPOSITE1 || defined DEFERRED1
+        #ifndef ACT_CORNER_LEAK_FIX_ALL_PASSES
+            #if defined COMPOSITE1 || defined DEFERRED1 || (defined COMPOSITE && WORLD_SPACE_REFLECTIONS_INTERNAL <= 0)
                 #undef ACT_CORNER_LEAK_FIX
             #endif
         #endif

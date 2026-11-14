@@ -410,7 +410,6 @@ void main() {
     #ifdef SKY_EFFECT_REFLECTION_TRANSLUCENT
         waterRefColor = mix(waterRefColor, clouds.rgb, clouds.a);
     #endif
-    waterRefColor = sqrt(waterRefColor) * 0.5;
 
     #if defined LIGHTSHAFTS_ACTIVE && (LIGHTSHAFT_BEHAVIOUR == 1 && SHADOW_QUALITY >= 1 || defined END)
         if (viewWidth + viewHeight - gl_FragCoord.x - gl_FragCoord.y < 1.5)
@@ -435,33 +434,37 @@ void main() {
         }
     #endif
 
-    /*DRAWBUFFERS:05*/
+    if (any(isnan(waterRefColor)) || any(isinf(waterRefColor))) waterRefColor = vec3(0.0);
+    waterRefColor = clamp(waterRefColor, vec3(0.0), vec3(65504.0));
+
+    /*DRAWBUFFERS:059*/
     gl_FragData[0] = vec4(color.rgb, 1.0);
-    gl_FragData[1] = vec4(waterRefColor, cloudLinearDepth);
+    gl_FragData[1] = vec4(cloudLinearDepth, 0.0, 0.0, 1.0);
+    gl_FragData[2] = vec4(waterRefColor, 1.0);
 
     // same check as #ifdef PBR_REFLECTIONS but for Optifine to understand:
     #if BLOCK_REFLECT_QUALITY >= 2 && RP_MODE >= 1
-        /*DRAWBUFFERS:054*/
+        /*DRAWBUFFERS:0594*/
         float reflectionStrength = sqrt(max(fresnelM * color.a, 0.0));
         if (unjittered) reflectionStrength = reflectionStrength <= 0.5 / 127.0 ? -1.0 : -reflectionStrength;
-        gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
+        gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
 
         #ifdef VOXY
-            /* RENDERTARGETS: 0,5,4,19 */
-            gl_FragData[3] = vec4(waterRefColor, cloudLinearDepth);
+            /* RENDERTARGETS: 0,5,9,4,19 */
+            gl_FragData[4] = vec4(waterRefColor, 1.0);
 
             #if SHADOW_QUALITY > -1
-                /* RENDERTARGETS: 0,5,4,19,18 */
-                gl_FragData[4] = vec4(lodShadow, 1.0, 1.0, 1.0);
+                /* RENDERTARGETS: 0,5,9,4,19,18 */
+                gl_FragData[5] = vec4(lodShadow, 1.0, 1.0, 1.0);
             #endif
         #endif
     #elif defined VOXY
-        /* RENDERTARGETS: 0,5,19 */
-        gl_FragData[2] = vec4(waterRefColor, cloudLinearDepth);
+        /* RENDERTARGETS: 0,5,9,19 */
+        gl_FragData[3] = vec4(waterRefColor, 1.0);
 
         #if SHADOW_QUALITY > -1
-            /* RENDERTARGETS: 0,5,19,18 */
-            gl_FragData[3] = vec4(lodShadow, 1.0, 1.0, 1.0);
+            /* RENDERTARGETS: 0,5,9,19,18 */
+            gl_FragData[4] = vec4(lodShadow, 1.0, 1.0, 1.0);
         #endif
     #endif
 }
@@ -497,7 +500,7 @@ void main() {
     eastVec = normalize(gbufferModelView[0].xyz);
 
     #if defined LIGHTSHAFTS_ACTIVE && (LIGHTSHAFT_BEHAVIOUR == 1 && SHADOW_QUALITY >= 1 || defined END)
-        vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).a;
+        vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).r;
 
         #ifdef END
             if (frameCounter % int(0.06666 / frameTimeSmooth + 0.5) == 0) { // Change speed is not too different above 10 fps

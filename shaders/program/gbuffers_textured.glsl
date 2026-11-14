@@ -77,7 +77,7 @@ void main() {
     #endif
 
     #ifdef VL_CLOUDS_ACTIVE
-        float cloudLinearDepth = texelFetch(gaux2, texelCoord, 0).a;
+        float cloudLinearDepth = texelFetch(gaux2, texelCoord, 0).r;
 
         if (cloudLinearDepth > 0.0) // Because Iris changes the pipeline position of opaque particles
         if (pow2(cloudLinearDepth + OSIEBCA * dither) * renderDistance < min(lViewPos, renderDistance)) discard;

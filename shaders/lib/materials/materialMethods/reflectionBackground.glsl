@@ -110,7 +110,7 @@ void AddBackgroundReflection(inout vec4 reflection, vec3 color, vec3 playerPos, 
 
             skyReflection *= skyLightFactor;
         #else
-            float specularHighlight = GGX(normalM, nViewPos, lightVec, max(dot(normalM, lightVec), 0.0), smoothness);
+            float specularHighlight = GGX(normalM, nViewPos, lightVec, max(dot(normalM, lightVec), 0.0), smoothness, normal);
             skyReflection += specularHighlight * highlightColor * shadowMult * highlightMult * invRainFactor;
 
             #if WATER_REFLECT_QUALITY >= 1
@@ -128,9 +128,9 @@ void AddBackgroundReflection(inout vec4 reflection, vec3 color, vec3 playerPos, 
             #ifdef COMPOSITE
                 float vlFactorM = vlFactor;
             #elif defined GBUFFERS_WATER
-                float vlFactorM = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).a;
+                float vlFactorM = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).r;
             #elif defined VOXY_TRANSLUCENT
-                float vlFactorM = texelFetch(gaux2, ivec2(viewWidth-1, viewHeight-1), 0).a;
+                float vlFactorM = texelFetch(gaux2, ivec2(viewWidth-1, viewHeight-1), 0).r;
             #endif
 
             vec3 translucentMult = vec3(1.0);

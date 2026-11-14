@@ -1,4 +1,5 @@
 #include "/lib/misc/reprojection.glsl"
+#include "/lib/materials/materialMethods/reflectionValidation.glsl"
 
 #ifdef OVERWORLD
     #include "/lib/atmospherics/sky.glsl"
@@ -201,11 +202,10 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
 
                     #if defined GBUFFERS_WATER || defined DH_WATER || defined VOXY_PATCH
                         #ifndef VOXY_PATCH
-                            reflection = vec4(texture2D(gaux2, refPos.xy).rgb, 1.0);
+                            reflection = vec4(texture2D(colortex9, refPos.xy).rgb, 1.0);
                         #else
                             reflection = vec4(texture2D(colortex19, refPos.xy).rgb, 1.0);
                         #endif
-                        reflection.rgb = pow2(reflection.rgb * 2.0);
                     #else
                         float smoothnessDM = pow2(smoothness);
                         float lodFactor = 1.0 - exp(-0.125 * (1.0 - smoothnessDM) * dist);
@@ -213,8 +213,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                         if (z0 <= 0.56) lod *= 2.22; // Using more lod to compensate for less roughness noise on held items
                         lod = max(lod - 1.0, 0.0);
 
-                        reflection.rgb = texture2DLod(colortex5, refPos.xy, lod).rgb;
-                        reflection.rgb = pow2(reflection.rgb * 2.0);
+                        reflection.rgb = texture2DLod(colortex9, refPos.xy, lod).rgb;
                     #endif
 
                     float skyFade = 0.0;
@@ -280,8 +279,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 #endif
 
                 if (z1R < 0.9999 && lViewPos <= 2.0 + lViewPosR) {
-                    reflection.rgb = texture2D(gaux2, screenPosR.xy).rgb;
-                    reflection.rgb = pow2(reflection.rgb * 2.0);
+                    reflection.rgb = texture2D(colortex9, screenPosR.xy).rgb;
 
                     edgeFactor = 1.0 - edgeFactor;
                     reflection.a = edgeFactor.x * pow2(edgeFactor.y);
@@ -315,7 +313,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 vec4 wsrReflection = GetWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
                                             RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent,
                                             length(reflectionStart - viewPos));
-                if (wsrTranslucent) return wsrReflection;
+                if (wsrTranslucent) return SanitizeReflection(wsrReflection);
 
                 refDist = min(refDist, traceLength);
                 reflection = mix(wsrReflection, vec4(reflection.rgb, 1.0), reflection.a);
@@ -336,5 +334,5 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         normalM = normalMR;
     #endif
 
-    return reflection;
+    return SanitizeReflection(reflection);
 }

@@ -237,7 +237,11 @@ bool UnpackShapeSurface(uint selected, vec3 local, vec2 atlasSize,
     return true;
 }
 
+#if WORLD_SPACE_SMOOTH_LIGHTING > 0
+vec3 GetReflectionShapeLighting(uint selected, vec3 local, vec3 fallback) {
+#else
 float GetReflectionShapeAO(uint selected, vec3 local) {
+#endif
     shapeRecord surface = shapeDataSSBO.records[selected];
     bool plane = (surface.shading.w & shapeFlagPlane) != 0u;
     vec3 axisU = plane ? GetShapePlaneVector(int(surface.mapping.z & 63u)) : GetShapeFaceNormal(int(surface.mapping.z & 7u));
@@ -247,6 +251,9 @@ float GetReflectionShapeAO(uint selected, vec3 local) {
     vec2 size = plane ? GetShapePlaneSize(surface) : GetShapeCuboidSize(surface.mapping.z);
     vec3 delta = local - GetShapeRecordAnchor(surface);
     vec2 uv = clamp(corner + vec2(dot(delta, axisU), dot(delta, axisV)) / max(size, vec2(0.0001)), 0.0, 1.0);
+    #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+        return InterpolateReflectionCornerLighting(shapeAOSSBO.corners[selected], uv, corner.x != corner.y, fallback);
+    #else
     vec4 ao = unpackUnorm4x8(shapeAOSSBO.corners[selected]); // 00,10,01,11
     if (corner.x == corner.y) {
         return uv.x >= uv.y ? ao.x + (ao.y - ao.x) * uv.x + (ao.w - ao.y) * uv.y
@@ -254,4 +261,5 @@ float GetReflectionShapeAO(uint selected, vec3 local) {
     }
     return uv.x + uv.y <= 1.0 ? ao.x + (ao.y - ao.x) * uv.x + (ao.z - ao.x) * uv.y
                             : ao.w + (ao.z - ao.w) * (1.0 - uv.x) + (ao.y - ao.w) * (1.0 - uv.y);
+    #endif
 }

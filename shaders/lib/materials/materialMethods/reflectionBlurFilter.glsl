@@ -1,3 +1,5 @@
+#include "/lib/materials/materialMethods/reflectionValidation.glsl"
+
 vec4 sampleBlurFilteredReflection(vec4 centerCol, vec3 nViewPos, float dither, float z0) {
     vec4 texture4 = texture2D(colortex4, texCoord);
 
@@ -28,6 +30,7 @@ vec4 sampleBlurFilteredReflection(vec4 centerCol, vec3 nViewPos, float dither, f
             vec2 offset = vec2(float(dx), float(dy)) * texelSize;
             vec2 sampleCoord = texCoord + offset;
             vec4 sampleCol = texture2D(colortex7, sampleCoord);
+            if (!IsFiniteReflection(sampleCol)) continue;
 
             // Skip step if normals are too different
             vec4 texture1Sample = texture2D(colortex1, sampleCoord);
@@ -47,5 +50,6 @@ vec4 sampleBlurFilteredReflection(vec4 centerCol, vec3 nViewPos, float dither, f
         }
     }
 
-    return sum / weightSum;
+    if (weightSum <= 0.0) return SanitizeReflection(centerCol);
+    return SanitizeReflection(sum / weightSum);
 }

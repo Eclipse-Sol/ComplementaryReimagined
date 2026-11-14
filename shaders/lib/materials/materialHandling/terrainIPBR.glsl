@@ -909,7 +909,7 @@ if (mat < 11024) {
                                     lmCoordM.x *= 0.85;
 
                                     #if GLOWING_AMETHYST >= 1
-                                        #if defined GBUFFERS_TERRAIN && !defined IPBR_COMPAT_MODE
+                                        #if (defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING) && !defined IPBR_COMPAT_MODE
                                             vec3 worldPos = playerPos.xyz + cameraPosition.xyz;
                                             vec3 blockPos = abs(fract(worldPos) - vec3(0.5));
                                             float maxBlockPos = max(blockPos.x, max(blockPos.y, blockPos.z));
@@ -1133,7 +1133,7 @@ if (mat < 11024) {
                                     #endif
 
                                     if (color.b > 0.5) { // Sea Pickle:Emissive Part
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             color.g *= 1.1;
                                             emission = 5.0;
                                         #endif
@@ -1290,7 +1290,7 @@ if (mat < 11024) {
                                 }
                             } else {
                                 if (mat < 10460) { // Command Block+
-                                    #ifndef IPBR_COMPAT_MODE
+                                    #if !defined IPBR_COMPAT_MODE && !defined DURING_WORLDSPACE_REF
                                         color = texture2DLod(tex, texCoord, 0);
                                     #endif
 
@@ -1411,7 +1411,7 @@ if (mat < 11024) {
                                         noSmoothLighting = true;
                                         lmCoordM.x = 1.0;
                                         emission = GetLuminance(color.rgb);
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             emission *= 3.5;
                                         #else
                                             emission *= 2.665;
@@ -1420,7 +1420,7 @@ if (mat < 11024) {
                                         color.b *= 0.5;
                                     }
 
-                                    #ifdef GBUFFERS_TERRAIN
+                                    #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                         else if (abs(NdotU) < 0.5) {
                                             #ifndef IPBR_COMPAT_MODE
                                                 #if MC_VERSION >= 12102 // torch model got changed in 1.21.2
@@ -1449,7 +1449,7 @@ if (mat < 11024) {
                                 else /*if (mat < 10504)*/ { // End Rod
                                     noDirectionalShading = true;
 
-                                    #ifdef GBUFFERS_TERRAIN
+                                    #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                         noSmoothLighting = true;
                                         lmCoordM.x = 0.92;
                                     #else
@@ -1465,7 +1465,7 @@ if (mat < 11024) {
                                         color.g *= 0.95;
                                     }
 
-                                    #if defined GBUFFERS_TERRAIN && ! defined GBUFFERS_COLORWHEEL
+                                    #if (defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING) && ! defined GBUFFERS_COLORWHEEL
                                         else { // Directional Self-light Effect
                                             vec3 fractPos = abs(fract(playerPos + cameraPosition) - 0.5);
                                             float maxCoord = max(fractPos.x, max(fractPos.y, fractPos.z));
@@ -1969,7 +1969,7 @@ if (mat < 11024) {
                                 else /*if (mat < 10648)*/ { // Repeater, Comparator
                                     noSmoothLighting = true;
 
-                                    #if ANISOTROPIC_FILTER > 0 && !defined IPBR_COMPAT_MODE
+                                    #if ANISOTROPIC_FILTER > 0 && !defined IPBR_COMPAT_MODE && !defined DURING_WORLDSPACE_REF
                                         color = texture2D(tex, texCoord); // Fixes artifacts
                                         color.rgb *= glColor.rgb;
                                     #endif
@@ -2001,7 +2001,7 @@ if (mat < 11024) {
                                     #endif
                                 }
                                 else /*if (mat < 10656)*/ { // Campfire:Lit
-                                    #ifdef GBUFFERS_TERRAIN
+                                    #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                         vec3 fractPos = fract(playerPos + cameraPosition) - 0.5;
                                         lmCoordM.x = pow2(pow2(smoothstep1(1.0 - 0.4 * dot(fractPos.xz, fractPos.xz))));
                                     #endif
@@ -2022,7 +2022,7 @@ if (mat < 11024) {
                                     #if COLORED_LIGHTING_INTERNAL == 0
                                         noSmoothLighting = true;
                                     #else
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             vec3 fractPos = fract(playerPos + cameraPosition) - 0.5;
                                             lmCoordM.x = pow2(pow2(smoothstep1(1.0 - 0.4 * dot(fractPos.xz, fractPos.xz))));
                                             lmCoordM.x *= 0.95;
@@ -2121,7 +2121,7 @@ if (mat < 11024) {
                                     if (boneFactor < 0.0001) {
                                         emission = pow2(max0(color.g - color.r)) * 1.7;
 
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             vec2 bpos = floor(playerPos.xz + cameraPosition.xz + 0.501)
                                                     + floor(playerPos.y + cameraPosition.y + 0.501);
                                             bpos = bpos * 0.01 + 0.003 * frameTimeCounter;
@@ -2143,7 +2143,7 @@ if (mat < 11024) {
                                     if (boneFactor < 0.0001) {
                                         emission = pow2(max0(color.g - color.r)) * 2.0;
 
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             vec2 coordFactor = abs(fract(playerPos.xz + cameraPosition.xz) - 0.5);
                                             float coordFactorM = max(coordFactor.x, coordFactor.y);
                                             if (coordFactorM < 0.43) emission += color.g * 7.0;
@@ -2350,7 +2350,7 @@ if (mat < 11024) {
                                     #endif
                                     if (checkColor.r + checkColor.b > checkColor.g * 2.2 || checkColor.r > 0.99) { // Amethyst Part
                                         #if GLOWING_AMETHYST >= 1
-                                            #if defined GBUFFERS_TERRAIN && !defined IPBR_COMPAT_MODE
+                                            #if (defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING) && !defined IPBR_COMPAT_MODE
                                                 vec2 absCoord = abs(signMidCoordPos);
                                                 float maxBlockPos = max(absCoord.x, absCoord.y);
                                                 emission = pow2(max0(1.0 - maxBlockPos) * color.g) * 5.4 + 1.2 * color.g;
@@ -2390,7 +2390,7 @@ if (mat < 11024) {
                                         lmCoordM.x = 1.0;
 
                                         #if GLOWING_AMETHYST >= 1
-                                            #if defined GBUFFERS_TERRAIN && !defined IPBR_COMPAT_MODE
+                                            #if (defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING) && !defined IPBR_COMPAT_MODE
                                                 vec2 absCoord = abs(signMidCoordPos);
                                                 float maxBlockPos = max(absCoord.x, absCoord.y);
                                                 emission = pow2(max0(1.0 - maxBlockPos) * color.g) * 5.4 + 1.2 * color.g;
@@ -2472,7 +2472,7 @@ if (mat < 11024) {
                                     #include "/lib/materials/specificMaterials/planks/cherryPlanks.glsl"
                                 }
                                 else /*if (mat < 10840)*/ { // Brewing Stand
-                                    #ifdef GBUFFERS_TERRAIN
+                                    #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                         vec3 worldPos = playerPos + cameraPosition;
                                         vec3 fractPos = fract(worldPos.xyz);
                                         vec3 coordM = abs(fractPos.xyz - 0.5);
@@ -2729,14 +2729,14 @@ if (mat < 11024) {
                                     if (color.g - color.r > 0.22 || lum > 0.99) {
                                         noSmoothLighting = true;
                                         lmCoordM.x = 1.0;
-                                        #ifdef GBUFFERS_TERRAIN
+                                        #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                             emission = 2.95;
                                         #else
                                             emission = 2.2;
                                         #endif
                                     }
 
-                                    #ifdef GBUFFERS_TERRAIN
+                                    #if defined GBUFFERS_TERRAIN || defined WSR_TERRAIN_SHADING
                                         else if (abs(NdotU) < 0.5) {
                                             #ifndef IPBR_COMPAT_MODE
                                                 lmCoordM.x = min1(0.7 + 0.3 * smoothstep1(max0(0.4 - signMidCoordPos.y)));

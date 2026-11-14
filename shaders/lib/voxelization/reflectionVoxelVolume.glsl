@@ -1,3 +1,6 @@
+#ifndef INCLUDE_REFLECTION_VOXEL_VOLUME
+#define INCLUDE_REFLECTION_VOXEL_VOLUME
+
 #if COLORED_LIGHTING < 512
     const ivec3 sceneVoxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, 64, COLORED_LIGHTING_INTERNAL);
 #else
@@ -31,6 +34,14 @@ const uint grassCaptureCapacity = reflectionFaceCapacity / 4u + 1u;
 #define WSR_MAX_REGIONS 20
 const int reflectionActiveRegionCount = int(100.0 / WSR_REBUILD_PERCENT + 0.5);
 const int reflectionMaxRegionCount = reflectionActiveRegionCount >= 1 && reflectionActiveRegionCount <= WSR_MAX_REGIONS ? WSR_MAX_REGIONS : -1;
+
+uint GetReflectionFrame() {
+    return uint(frameCounter + 1);
+}
+
+ivec2 GetReflectionBufferSize() {
+    return ivec2(vec2(viewWidth, viewHeight) * WSR_REFLECTION_SCALE);
+}
 
 uint GetReflectionRingIndex(uint start, uint offset, uint capacity) {
     return (start + offset) % capacity;
@@ -89,10 +100,6 @@ int HashTileToRegion(ivec3 worldTile) {
     return PositiveModulo(worldTile.x + 7 * worldTile.y + 11 * worldTile.z, reflectionActiveRegionCount);
 }
 
-bool IsReflectionLavaRefreshFrame(int frame) {
-    return frame % reflectionActiveRegionCount == 0;
-}
-
 int GetPackedRegionTileOffset() {
     ivec3 origin = GetReflectionVolumeOrigin();
     int originYOffset = PositiveModulo(origin.y, 16);
@@ -141,3 +148,5 @@ ivec3 GetSceneVoxelPosition(uint storageIndex) {
         return GetSceneVoxelPosition(storageIndex, ivec3(0));
     #endif
 }
+
+#endif

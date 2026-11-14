@@ -93,6 +93,13 @@ void main() {
                          (gl_GlobalInvocationID.y + uint(voxelVolumeSize.y) * gl_GlobalInvocationID.z);
         if (ReflectionStorageAvailable() && grassIndex < min(blockDataSSBO.grassCaptureCount, grassCaptureCapacity))
             ResolveGrassSideOverlay(grassIndex);
+        #if WORLD_SPACE_SHAPES > 0
+            if (ReflectionStorageAvailable()) ResolveReflectionLavaHeights(grassIndex);
+        #endif
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            if (ReflectionStorageAvailable() && grassIndex < min(blockDataSSBO.cornerCaptureCount, reflectionCornerCaptureCapacity))
+                ResolveReflectionCornerLighting(grassIndex);
+        #endif
     #endif
     #if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
         if (all(equal(gl_WorkGroupID, uvec3(0u))) && gl_LocalInvocationIndex == 0u)

@@ -42,3 +42,9 @@ vec3 GetHeldLighting(vec3 playerPos, vec3 color, float emission) {
 
     return heldLighting;
 }
+
+vec3 GetHeldLightingGated(vec3 playerPos, vec3 color, float emission) {
+    if (heldBlockLightValue > 0 || heldBlockLightValue2 > 0 || heldItemId == 45032 || heldItemId2 == 45032)
+        return GetHeldLighting(playerPos, color, emission);
+    return vec3(0.0);
+}

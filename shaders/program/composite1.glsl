@@ -337,11 +337,11 @@ void main() {
     #if LIGHTSHAFT_QUALI_DEFINE > 0 && LIGHTSHAFT_BEHAVIOUR == 1 && SHADOW_QUALITY >= 1 && defined OVERWORLD || defined END
         #if LENSFLARE_MODE > 0 || defined ENTITY_TAA_NOISY_CLOUD_FIX
             if (viewWidth + viewHeight - gl_FragCoord.x - gl_FragCoord.y > 1.5)
-                vlFactorM = texelFetch(colortex5, texelCoord, 0).a;
+                vlFactorM = texelFetch(colortex5, texelCoord, 0).r;
         #endif
 
         /* DRAWBUFFERS:05 */
-        gl_FragData[1] = vec4(0.0, 0.0, 0.0, vlFactorM);
+        gl_FragData[1] = vec4(vlFactorM, 0.0, 0.0, 1.0);
     #endif
 }
 
@@ -377,7 +377,7 @@ void main() {
 
     #ifdef LIGHTSHAFTS_ACTIVE
         #if LIGHTSHAFT_BEHAVIOUR == 1 && SHADOW_QUALITY >= 1 || defined END
-            vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).a;
+            vlFactor = texelFetch(colortex5, ivec2(viewWidth-1, viewHeight-1), 0).r;
         #else
             #if LIGHTSHAFT_BEHAVIOUR == 2
                 vlFactor = 0.0;
