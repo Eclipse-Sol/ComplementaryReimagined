@@ -27,7 +27,9 @@ if (mat < 11024) {
                         if (mat < 10080) { // 10064 to 10079
                             if (mat == 10068) { // Lava
                                 vec3 vertexPos = PlayerToSceneVoxel(ModelToScenePos(gl_Vertex.xyz));
+                                float height = vertexPos.y - floor(voxelPos.y);
                                 if (abs(normal.y) > 0.1) {
+                                    if ((normal.y > 0.0) == (height < 0.01)) return;
                                     normal = vec3(0.0, sign(normal.y), 0.0);
                                     // Flow rotates the top UVs...
                                     textureRad.x = length(textureRad * vec2(atlasSize)) * 0.70710678 / atlasSize.x;
@@ -39,7 +41,6 @@ if (mat < 11024) {
                                         lavaTextureRotation = atan(corner.x * uvCorner.y - corner.y * uvCorner.x, dot(corner, uvCorner));
                                     }
                                 } else {
-                                    float height = vertexPos.y - floor(voxelPos.y);
                                     origin.y = texCoord.y - 2.0 * textureRad.x * atlasSize.x / atlasSize.y * (1.0 - height);
                                 }
                             }
