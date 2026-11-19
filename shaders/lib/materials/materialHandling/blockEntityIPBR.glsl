@@ -60,7 +60,7 @@ if (blockEntityMat < 5028) {
                     color.rgb *= vec3(1.0, 0.25, 0.1);
                 }
             } else /*if (blockEntityMat == 5024)*/ { // End Portal, End Gateway
-                #ifdef SPECIAL_PORTAL_EFFECTS
+                #if SPECIAL_PORTAL_EFFECT == 1 || SPECIAL_PORTAL_EFFECT == 3
                     #include "/lib/materials/specificMaterials/others/endPortalEffect.glsl"
                 #endif
             }

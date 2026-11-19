@@ -40,14 +40,14 @@ void ApplyReflectionLightingAtlas(inout vec4 color, vec3 playerPos, vec3 viewPos
     emission *= 1.0 - 0.25 * smoothstep1(lightmap.y) * invRainFactor * sunVisibility;
     vec3 blockLighting = wsrAtlasBlockLight.rgb
                        + wsrAtlasLightDetail / pow2((1.0 + emission) * (color.rgb + 0.1));
+    #if HELD_LIGHTING_MODE >= 1
+        blockLighting = sqrt(pow2(blockLighting) + GetHeldLightingGated(playerPos, color.rgb, emission));
+    #endif
     #ifdef OVERWORLD
         if (isEyeInWater != 1) {
             float shadowMultFloat = min1(GetLuminance(wsrAtlasShadow));
             blockLighting *= GetBlockLightSkyFade(wsrAtlasBlockLight.a, lightmapY2, shadowMultFloat, emission);
         }
-    #endif
-    #if HELD_LIGHTING_MODE >= 1
-        blockLighting = sqrt(pow2(blockLighting) + GetHeldLightingGated(playerPos, color.rgb, emission));
     #endif
     blockLighting *= XLIGHT_I;
     color.rgb *= GetFinalDiffuse(wsrAtlasSceneLight.a, blockLighting + wsrAtlasSceneLight.rgb, emission);

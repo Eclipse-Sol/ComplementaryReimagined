@@ -159,8 +159,10 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     float RVdotU = dot(nViewPosR, upVec);
     float RVdotS = dot(nViewPosR, sunVec);
 
-    #if defined GBUFFERS_WATER && WATER_STYLE >= 2
-        normalMR = normalize(mix(geoNormal, normalM, 0.8));
+    #if defined GBUFFERS_WATER && (WATER_STYLE >= 2 || defined CUSTOM_PBR)
+        // Fix reflection vectors pointing inside water
+        float reverseFactor = pow(max0(dot(nViewPosR, geoNormal)), 0.25);
+        normalMR = normalize(mix(geoNormal, normalM, reverseFactor));
     #endif
 
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
@@ -187,7 +189,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
             if (!wsrTranslucent) {
             // Ray Marching
-            #if defined GBUFFERS_WATER && WATER_STYLE >= 2
+            #if defined GBUFFERS_WATER && (WATER_STYLE >= 2 || defined CUSTOM_PBR)
                 vec3 rayDir = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
             #else
                 vec3 rayDir = nViewPosR;

@@ -114,7 +114,7 @@ void DoWave(inout vec3 playerPos, int mat) {
         #ifdef WAVING_FOLIAGE
             if (mat == 10005 // Grounded Foliage
                 #ifdef DO_MORE_FOLIAGE_WAVING
-                    || mat == 10769 // Torchflower
+                    || mat == 10768 // Torchflower
                     || mat == 10976 // Open Eyeblossom
                 #endif
             ) {

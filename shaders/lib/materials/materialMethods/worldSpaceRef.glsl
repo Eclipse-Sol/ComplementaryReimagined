@@ -810,10 +810,10 @@ vec4 GetWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
                         float lightMult = 0.0;
                     #endif
 
-                    vec3 voxelPosM = SceneToVoxel(vec3(0.0));
-                        voxelPosM = clamp01(voxelPosM / vec3(voxelVolumeSize));
+                    vec3 voxelPosM = SceneToVoxel(vec3(-relativeEyePosition));
+                         voxelPosM = clamp01(voxelPosM / vec3(voxelVolumeSize));
                     vec4 lightVolume = GetLightVolume(voxelPosM);
-                        lightVolume = max(lightVolume, vec4(0.000001));
+                         lightVolume = max(lightVolume, vec4(0.000001));
                     vec3 specialLighting = pow(GetLuminance(lightVolume.rgb), 0.25) * DoLuminanceCorrection(pow(lightVolume.rgb, vec3(0.25)));
 
                     #if HELD_LIGHTING_MODE >= 1
@@ -832,7 +832,11 @@ vec4 GetWSR(vec3 playerPos, vec3 nViewPos, vec3 normalMR, vec3 nViewPosR, vec3 n
                         sceneLighting *= moonPhaseInfluence;
                     #endif
 
-                    vec3 lighting = sceneLighting + specialLighting * (1.0 - lmCoord.y * sunFactor) * XLIGHT_I + minLighting;
+                    #ifdef OVERWORLD
+                        specialLighting *= 1.0 - lmCoord.y * sunFactor;
+                    #endif
+
+                    vec3 lighting = sceneLighting + specialLighting * XLIGHT_I + minLighting;
                     lighting += emission * 0.8;
 
                     return vec4(albedo * lighting, GetReflectionVolumeFade(playerPos));
