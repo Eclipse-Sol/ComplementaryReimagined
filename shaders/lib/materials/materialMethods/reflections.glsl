@@ -302,7 +302,9 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             // Finalizing Terrain Reflection and Alpha
             if (
                 refPos.z < 1.0
-                && (lodHit || refPos.z > 0.56)
+                #if !defined DH_WATER && !defined VOXY_PATCH
+                    && (lodHit || refPos.z > 0.56)
+                #endif
                 && possibleReflection
                 && (err * (1.0 - fresnel) < 1.0 + lViewPosRT * 0.2)
                 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && COLORED_LIGHTING_INTERNAL >= 256
