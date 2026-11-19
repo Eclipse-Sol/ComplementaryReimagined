@@ -36,13 +36,108 @@ float GetWSRSurfaceBias(vec3 viewPos) {
     return 0.001 + 3.576278687e-7 * abs(gbufferProjectionInverse[2][3]) * dot(viewPos, viewPos);
 }
 
-vec3 GetWSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir) {
-    return viewPos + rayDir * (GetWSRSurfaceBias(viewPos) / max(dot(rayDir, normalize(normal)), 0.04));
+vec3 GetWSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir, float surfaceBias) {
+    return viewPos + rayDir * (surfaceBias / max(dot(rayDir, normal), 0.04));
 }
 
-vec3 GetSSRReflectionStart(vec3 viewPos, vec3 normal, float distance, float fresnel) {
-    return viewPos + normal * (distance * 0.025 * (1.0 - fresnel) + 0.05);
+vec3 GetSSRReflectionStart(vec3 viewPos, vec3 normal, vec3 rayDir, float distance, float fresnel) {
+    float clearance = distance * 0.025 * (1.0 - fresnel) + 0.05;
+    return viewPos + rayDir * (clearance / max(dot(rayDir, normalize(normal)), 0.04));
 }
+
+#if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+    float GetSSREdgeFade(vec2 edgeDistance) {
+        vec2 fade = 1.0 - smoothstep(0.8, 1.0, edgeDistance);
+        return fade.x * fade.y;
+    }
+#endif
+
+#if (defined COMPOSITE || WATER_REFLECT_QUALITY >= 2) && (WORLD_SPACE_REFLECTIONS_INTERNAL == -1 || WORLD_SPACE_REF_MODE == 2) && !defined WSR_TRACE_PREPASS
+    vec3 GetSSRDepthPos(vec2 rayCoord, vec2 sampleCoord, sampler2D depthtex, out float sampleDepth, out bool lodHit) {
+        sampleDepth = texture2D(depthtex, sampleCoord).r;
+        vec3 depthPos = ScreenToView(vec3(rayCoord, sampleDepth));
+        lodHit = false;
+
+        #if defined GBUFFERS_WATER && (defined DISTANT_HORIZONS || defined VOXY)
+            if (sampleDepth >= 1.0) {
+                #ifdef VOXY
+                    sampleDepth = texture2D(vxDepthTexOpaque, sampleCoord).r;
+                    if (sampleDepth < 1.0) {
+                        depthPos = ScreenToViewVoxy(vec3(rayCoord, sampleDepth));
+                        lodHit = true;
+                    }
+                #endif
+                #ifdef DISTANT_HORIZONS
+                    sampleDepth = texture2D(dhDepthTex1, sampleCoord).r;
+                    if (sampleDepth < 1.0) {
+                        depthPos = nvec3(dhProjectionInverse * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
+                        lodHit = true;
+                    }
+                #endif
+            }
+        #endif
+
+        return depthPos;
+    }
+
+    bool SampleSSRDepth(vec3 viewPos, sampler2D depthtex, vec2 rEdge,
+                        out vec3 refPos, out vec3 depthPos, out bool lodHit) {
+        refPos = vec3(0.0, 0.0, 1.0);
+        depthPos = vec3(0.0);
+        lodHit = false;
+        vec4 clipPos = gbufferProjection * vec4(viewPos, 1.0);
+        if (clipPos.w <= 0.0) return false;
+
+        vec2 rayCoord = clipPos.xy / clipPos.w * 0.5 + 0.5;
+        vec2 sampleCoord = rayCoord;
+        #ifdef TAA
+            sampleCoord = TAAJitter(sampleCoord, 0.5);
+        #endif
+        if (abs(sampleCoord.x - 0.5) > rEdge.x || abs(sampleCoord.y - 0.5) > rEdge.y) return false;
+
+        float sampleDepth;
+        depthPos = GetSSRDepthPos(rayCoord, sampleCoord, depthtex, sampleDepth, lodHit);
+        refPos = vec3(sampleCoord, sampleDepth);
+        return true;
+    }
+
+    void RefineSSRHit(vec3 start, vec3 rayDir, sampler2D depthtex, vec2 rEdge,
+                      inout vec3 refPos, inout vec3 rfragpos, inout bool lodHit, inout float err) {
+        vec3 viewDir = normalize(rfragpos);
+        vec3 crossRayView = cross(rayDir, viewDir);
+        float crossLength2 = dot(crossRayView, crossRayView);
+        if (crossLength2 < 1e-6) return;
+
+        float s0 = -dot(cross(start, viewDir), crossRayView) / crossLength2;
+        float g0 = dot(rfragpos - (start + rayDir * s0), viewDir);
+        float s1 = max(dot(rfragpos - start, rayDir), 0.0);
+
+        for (int i = 0; i < 4; i++) {
+            vec3 rayPos = start + rayDir * s1;
+            vec3 candidateRefPos, depthPos;
+            bool candidateLodHit;
+            if (!SampleSSRDepth(rayPos, depthtex, rEdge, candidateRefPos, depthPos, candidateLodHit)
+                || candidateRefPos.z >= 1.0) break;
+
+            float candidateErr = length(depthPos - rayPos);
+            if (candidateErr < err) {
+                refPos = candidateRefPos;
+                rfragpos = depthPos;
+                lodHit = candidateLodHit;
+                err = candidateErr;
+            }
+
+            if (i == 3) break;
+            float g1 = dot(depthPos - rayPos, normalize(rayPos));
+            float gDif = g1 - g0;
+            if (abs(gDif) < 1e-7) break;
+            float s2 = s1 - g1 * (s1 - s0) / gDif;
+            s0 = s1;
+            g0 = g1;
+            s1 = max(s2, 0.0);
+        }
+    }
+#endif
 
 vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerPos, float lViewPos, float z0,
                    sampler2D depthtex, float dither, float skyLightFactor, float fresnel,
@@ -52,7 +147,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
         vec2 rEdge = vec2(0.6, 0.55);
     #else
-        vec2 rEdge = vec2(0.525, 0.525);
+        vec2 rEdge = vec2(0.5, 0.5);
     #endif
     vec3 normalMR = normalM;
 
@@ -68,98 +163,120 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
         normalMR = normalize(mix(geoNormal, normalM, 0.8));
     #endif
 
-    vec3 reflectionOriginNormal = dot(geoNormal, geoNormal) > 1e-6 ? geoNormal : normalMR;
-    WSR_PRECISE vec3 reflectionStart = GetWSRReflectionStart(viewPos, reflectionOriginNormal, nViewPosR);
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+        vec3 reflectionOriginNormal = normalize(dot(geoNormal, geoNormal) > 1e-6 ? geoNormal : normalMR);
+        float reflectionBias = GetWSRSurfaceBias(viewPos);
+        WSR_PRECISE vec3 reflectionStart = GetWSRReflectionStart(viewPos, reflectionOriginNormal, nViewPosR, reflectionBias);
+    #endif
     // ============================== End of Step 1 ============================== //
 
     // ============================== Step 2: Calculate Terrain Reflection and Alpha ============================== //
-    // In COMPOSITE, translucents only need WSR, so they skip SSR here and return from the WSR call in step 3
-    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE && WATER_REFLECT_QUALITY >= 1
+    // In COMPOSITE, translucents skip SSR and return covered WSR terrain before adding sky.
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE
         bool wsrTranslucent = z0 != z1;
     #else
         const bool wsrTranslucent = false;
     #endif
 
     vec4 reflection = vec4(0.0);
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+        float hitConfidence = 1.0;
+    #endif
     #if (defined COMPOSITE || WATER_REFLECT_QUALITY >= 1) && (WORLD_SPACE_REFLECTIONS_INTERNAL == -1 || WORLD_SPACE_REF_MODE == 2) && !defined WSR_TRACE_PREPASS
         // Method 1: Ray Marched Reflection //
         #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 2
             if (!wsrTranslucent) {
             // Ray Marching
-            vec3 start = GetSSRReflectionStart(viewPos, normalMR, lViewPos, fresnel);
             #if defined GBUFFERS_WATER && WATER_STYLE >= 2
-                vec3 vector = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
+                vec3 rayDir = normalize(reflect(nViewPos, normalMR)); // Not using nViewPosR because normalMR changed
             #else
-                vec3 vector = nViewPosR;
-            #endif
-            vector *= 0.5;
-            vec3 vectorBase = vector;
-            vec3 viewPosRT = start + vector;
-            vec3 tvector = vector;
-
-            #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
-                int sampleCount = 30;
-                int refinementCount = 6;
-            #else
-                int sampleCount = 38;
-                int refinementCount = 10;
+                vec3 rayDir = nViewPosR;
             #endif
 
-            int sr = 0;
+            vec3 start = GetSSRReflectionStart(viewPos, normalMR, rayDir, lViewPos, fresnel);
+            float startLength = length(start - viewPos);
+
             float dist = 0.0;
             vec3 refPos = vec3(0.0);
             vec3 rfragpos = vec3(0.0);
             float err = 9999999.0;
-            float sampleDepth = 1.0;
-            for (int i = 0; i < sampleCount; i++) {
-                refPos = nvec3(gbufferProjection * vec4(viewPosRT, 1.0)) * 0.5 + 0.5;
-                vec2 rayCoord = refPos.xy;
-                #ifdef TAA
-                    refPos.xy = TAAJitter(refPos.xy, 0.5);
-                #endif
-                if (abs(refPos.x - 0.5) > rEdge.x || abs(refPos.y - 0.5) > rEdge.y) break;
+            bool lodHit = false;
 
-                sampleDepth = texture2D(depthtex, refPos.xy).r;
-                rfragpos = nvec3(gbufferProjectionInverse * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
-
-                #if defined GBUFFERS_WATER && (defined DISTANT_HORIZONS || defined VOXY)
-                    if (sampleDepth >= 1.0) {
-                        #ifdef VOXY
-                            sampleDepth = texture2D(vxDepthTexOpaque, refPos.xy).r;
-                            if (sampleDepth < 1.0) {
-                                rfragpos = nvec3(vxProjInv * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
-                            }
-                        #endif
-                        #ifdef DISTANT_HORIZONS
-                            sampleDepth = texture2D(dhDepthTex1, refPos.xy).r;
-                            if (sampleDepth < 1.0) {
-                                rfragpos = nvec3(dhProjectionInverse * vec4(vec3(rayCoord, sampleDepth) * 2.0 - 1.0, 1.0));
-                            }
-                        #endif
+            bool startHidden = SampleSSRDepth(start, depthtex, rEdge, refPos, rfragpos, lodHit)
+                               && refPos.z < 1.0 && dot(rfragpos, rfragpos) < dot(start, start);
+            if (startHidden) {
+                float visibleLength = 0.0;
+                float hiddenLength = startLength;
+                for (int i = 0; i < 5; i++) {
+                    float midLength = 0.5 * (visibleLength + hiddenLength);
+                    vec3 rayPos = viewPos + rayDir * midLength;
+                    vec3 midRefPos, midDepthPos;
+                    bool midLodHit;
+                    if (SampleSSRDepth(rayPos, depthtex, rEdge, midRefPos, midDepthPos, midLodHit)
+                        && midRefPos.z < 1.0 && dot(midDepthPos, midDepthPos) < dot(rayPos, rayPos)) {
+                        hiddenLength = midLength;
+                        refPos = midRefPos;
+                        rfragpos = midDepthPos;
+                        lodHit = midLodHit;
+                    } else {
+                        visibleLength = midLength;
                     }
-                #endif
-
-                dist = length(start - rfragpos);
-
-                err = length(viewPosRT - rfragpos);
-                if (err * 0.33333 < length(vector)) {
-                    sr++;
-                    if (sr >= refinementCount) break;
-                    tvector -= vector;
-                    vector *= 0.1;
                 }
-                vector *= 2.0;
-                tvector += vector * (0.95 + 0.1 * dither);
-                viewPosRT = start + tvector;
+                err = length(viewPos + rayDir * hiddenLength - rfragpos);
+                startHidden = err < startLength;
             }
 
+            if (!startHidden) {
+                vec3 vector = rayDir * 0.5;
+                vec3 viewPosRT = start + vector;
+                vec3 tvector = vector;
+
+                #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                    int sampleCount = 30;
+                    int refinementCount = 6;
+                #else
+                    int sampleCount = 38;
+                    int refinementCount = 10;
+                #endif
+
+                int sr = 0;
+                for (int i = 0; i < sampleCount; i++) {
+                    if (!SampleSSRDepth(viewPosRT, depthtex, rEdge, refPos, rfragpos, lodHit)) break;
+
+                    err = length(viewPosRT - rfragpos);
+                    if (err * 0.33333 < length(vector)) {
+                        sr++;
+                        if (sr >= refinementCount) break;
+                        tvector -= vector;
+                        vector *= 0.1;
+                    }
+                    vector *= 2.0;
+                    tvector += vector * (0.95 + 0.1 * dither);
+                    viewPosRT = start + tvector;
+                }
+
+                if (sr > 0 && refPos.z < 1.0) {
+                    RefineSSRHit(start, rayDir, depthtex, rEdge, refPos, rfragpos, lodHit, err);
+                }
+            }
+            dist = length(rfragpos - viewPos);
+
             float lViewPosRT = length(rfragpos);
-            refPos.z = sampleDepth;
+
+            #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+                #if !defined COMPOSITE || BLOCK_REFLECT_QUALITY >= 2
+                    if (!lodHit && lViewPosRT <= 0.25 * COLORED_LIGHTING_INTERNAL) {
+                        float pixelSize = 2.0 * lViewPosRT / (gbufferProjection[1][1] * viewHeight);
+                        float depthTolerance = 0.005 + pixelSize;
+                        hitConfidence = 1.0 - smoothstep(depthTolerance, 2.0 * depthTolerance, err);
+                    }
+                #endif
+            #endif
 
             #ifdef COMPOSITE
                 bool possibleReflection = true;
             #else
-                bool possibleReflection = dot(normalize(rfragpos - start), geoNormal) > 0.0;
+                bool possibleReflection = startHidden || dot(normalize(rfragpos - start), geoNormal) > 0.0;
             #endif
 
             #ifdef VOXY_PATCH
@@ -183,6 +300,7 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             // Finalizing Terrain Reflection and Alpha
             if (
                 refPos.z < 1.0
+                && (lodHit || refPos.z > 0.56)
                 && possibleReflection
                 && (err * (1.0 - fresnel) < 1.0 + lViewPosRT * 0.2)
                 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && COLORED_LIGHTING_INTERNAL >= 256
@@ -191,20 +309,27 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             ) {
                 vec2 absPos = abs(refPos.xy - 0.5);
                 vec2 cdist = absPos / rEdge;
-                float border = clamp(1.0 - pow(max(cdist.x, cdist.y), 50.0), 0.0, 1.0);
+                #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                    float border = clamp(1.0 - pow(max(cdist.x, cdist.y), 50.0), 0.0, 1.0);
+                #else
+                    float border = GetSSREdgeFade(cdist);
+                #endif
                 reflection.a = border;
 
                 if (reflection.a > 0.001) {
-                    vec2 edgeFactor = pow2(pow2(pow2(cdist)));
                     #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                        vec2 edgeFactor = pow2(pow2(pow2(cdist)));
                         refPos.y += (dither - 0.5) * (0.05 * (edgeFactor.x + edgeFactor.y));
                     #endif
 
                     #if defined GBUFFERS_WATER || defined DH_WATER || defined VOXY_PATCH
                         #ifndef VOXY_PATCH
-                            reflection = vec4(texture2D(colortex9, refPos.xy).rgb, 1.0);
+                            reflection.rgb = texture2D(colortex9, refPos.xy).rgb;
                         #else
-                            reflection = vec4(texture2D(colortex19, refPos.xy).rgb, 1.0);
+                            reflection.rgb = texture2D(colortex19, refPos.xy).rgb;
+                        #endif
+                        #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                            reflection.a = 1.0;
                         #endif
                     #else
                         float smoothnessDM = pow2(smoothness);
@@ -225,17 +350,17 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                         //reflection.a *= 1.0 - skyFade;
                     #endif
 
-                    edgeFactor.x = pow2(edgeFactor.x);
-                    edgeFactor = 1.0 - edgeFactor;
-                    float refFactor = pow(edgeFactor.x * edgeFactor.y, 2.0 + 3.0 * GetLuminance(reflection.rgb));
-                    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined GBUFFERS_WATER
-                        refFactor = min(refFactor, 0.1) * 10.0;
+                    #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                        edgeFactor.x = pow2(edgeFactor.x);
+                        edgeFactor = 1.0 - edgeFactor;
+                        float refFactor = pow(edgeFactor.x * edgeFactor.y, 2.0 + 3.0 * GetLuminance(reflection.rgb));
+                        reflection.a *= refFactor;
                     #endif
-                    reflection.a *= refFactor;
                     refDist = dist;
                 }
 
-                float posDif = lViewPosRT - lViewPos;
+                float rayNearestLength = length(viewPos + rayDir * max(-dot(viewPos, rayDir), 0.0));
+                float posDif = lViewPosRT - rayNearestLength;
                 reflection.a *= clamp(posDif + 3.0, 0.0, 1.0);
             }
             }
@@ -257,8 +382,10 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
             vec2 screenPosRM = abs(screenPosR.xy - 0.5);
 
             if (screenPosRM.x < rEdge.x && screenPosRM.y < rEdge.y) {
-                vec2 edgeFactor = pow2(pow2(pow2(screenPosRM / rEdge)));
-                screenPosR.y += (dither - 0.5) * (0.03 * (edgeFactor.x + edgeFactor.y) + 0.001);
+                #if WORLD_SPACE_REFLECTIONS_INTERNAL == -1
+                    vec2 edgeFactor = pow2(pow2(pow2(screenPosRM / rEdge)));
+                    screenPosR.y += (dither - 0.5) * (0.03 * (edgeFactor.x + edgeFactor.y) + 0.001);
+                #endif
                 float z1R = texture2D(depthtex1, screenPosR.xy).x;
                 screenPosR.z = z1R;
                 vec3 rayScreenPos = screenPosR;
@@ -281,8 +408,12 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 if (z1R < 0.9999 && lViewPos <= 2.0 + lViewPosR) {
                     reflection.rgb = texture2D(colortex9, screenPosR.xy).rgb;
 
-                    edgeFactor = 1.0 - edgeFactor;
-                    reflection.a = edgeFactor.x * pow2(edgeFactor.y);
+                    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+                        reflection.a = GetSSREdgeFade(screenPosRM / rEdge);
+                    #else
+                        edgeFactor = 1.0 - edgeFactor;
+                        reflection.a = edgeFactor.x * pow2(edgeFactor.y);
+                    #endif
                     reflection.a *= clamp01((dot(nViewPos, nViewPosR) - 0.45) * 10.0); // Fixes perpendicular ref bug
 
                     #ifdef BORDER_FOG
@@ -300,6 +431,13 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
     // ============================== End of Step 2 ============================== //
 
     // ============================== Step 3: Add Sky or WSR Reflection ============================== //
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+        reflection.a *= hitConfidence;
+        #ifdef COMPOSITE
+            reflection.rgb *= reflection.a;
+        #endif
+    #endif
+    if (reflection.a <= 0.0) refDist = far;
     #if defined COMPOSITE || WATER_REFLECT_QUALITY >= 1
         if (reflection.a < 1.0)
     #endif
@@ -313,11 +451,16 @@ vec4 GetReflection(inout vec3 normalM, vec3 viewPos, vec3 nViewPos, vec3 playerP
                 vec4 wsrReflection = GetWSR(ViewToPlayer(reflectionStart), nViewPos, normalMR, nViewPosR, normalGradX, normalGradY,
                                             RVdotU, RVdotS, z0, dither, traceLength, wsrTranslucent,
                                             length(reflectionStart - viewPos));
-                if (wsrTranslucent) return SanitizeReflection(wsrReflection);
-
-                refDist = min(refDist, traceLength);
-                reflection = mix(wsrReflection, vec4(reflection.rgb, 1.0), reflection.a);
+                float wsrWeight = (1.0 - reflection.a) * wsrReflection.a;
+                if (wsrWeight > reflection.a) refDist = traceLength;
+                reflection.rgb += wsrReflection.rgb * wsrWeight;
+                reflection.a += wsrWeight;
             }
+        #endif
+
+        #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE
+            // Translucents replace only covered background.
+            if (wsrTranslucent) return SanitizeReflection(reflection);
         #endif
 
         #ifdef WSR_TRACE_PREPASS

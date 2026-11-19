@@ -158,5 +158,12 @@ void AddBackgroundReflection(inout vec4 reflection, vec3 color, vec3 playerPos, 
         vec3 skyReflection = vec3(0.0);
     #endif
 
-    reflection.rgb = mix(skyReflection, reflection.rgb, reflection.a);
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined GBUFFERS_WATER
+        reflectionBackgroundContribution = skyReflection * (1.0 - reflection.a);
+    #endif
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && defined COMPOSITE
+        reflection.rgb += skyReflection * (1.0 - reflection.a);
+    #else
+        reflection.rgb = mix(skyReflection, reflection.rgb, reflection.a);
+    #endif
 }

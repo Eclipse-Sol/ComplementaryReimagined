@@ -95,6 +95,10 @@ float GetLinearDepth(float depth) {
     #include "/lib/atmospherics/sky.glsl"
 #endif
 
+#if WORLD_SPACE_REFLECTIONS > 0
+    vec3 reflectionBackgroundContribution = vec3(0.0);
+#endif
+
 #if WATER_REFLECT_QUALITY >= 0
     #if defined SKY_EFFECT_REFLECTION_TRANSLUCENT && defined OVERWORLD
         #if AURORA_STYLE > 0
@@ -302,12 +306,12 @@ void main() {
         #if WORLD_SPACE_REFLECTIONS > 0
             /* DRAWBUFFERS:03648 */
             gl_FragData[3] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
-            gl_FragData[4] = vec4(reflection.rgb * fresnelM * color.a * fogAlpha, reflection.a);
+            gl_FragData[4] = vec4(reflectionBackgroundContribution * fresnelM * color.a * fogAlpha, reflection.a);
         #endif
     #elif WORLD_SPACE_REFLECTIONS > 0
         /* DRAWBUFFERS:0348 */
         gl_FragData[2] = vec4(mat3(gbufferModelViewInverse) * normalM, reflectionStrength);
-        gl_FragData[3] = vec4(reflection.rgb * fresnelM * color.a * fogAlpha, reflection.a);
+        gl_FragData[3] = vec4(reflectionBackgroundContribution * fresnelM * color.a * fogAlpha, reflection.a);
     #endif
 }
 

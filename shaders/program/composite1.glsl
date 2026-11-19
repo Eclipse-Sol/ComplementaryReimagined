@@ -141,7 +141,7 @@ void main() {
 
     #if defined PBR_REFLECTIONS || WATER_REFLECT_QUALITY > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0
         if (z0 < 1.0) {
-            vec4 compositeReflection = texture2D(colortex7, texCoord);
+            vec4 compositeReflection = texture2D(colortex7, texCoordM);
 
             // Partial fix for half resolution WSR-only reflections having a lot of sky gaps
             #if WORLD_SPACE_REF_MODE == 1
@@ -154,17 +154,19 @@ void main() {
                     );
 
                     for (int i = 0; i < 4; i++) {
-                        vec4 compositeRefSample = texture2D(colortex7, texCoord + refOffsets[i] * 1.5 / view);
+                        vec4 compositeRefSample = texture2D(colortex7, texCoordM + refOffsets[i] * 1.5 / view);
                         if (compositeRefSample.a > compositeReflection.a * 1.01) compositeReflection = compositeRefSample;
                     }
                 }
             #endif
 
-            float fresnelM = pow2(texture2D(colortex4, texCoord).a); // including attenuation through fog and clouds
+            float fresnelM = pow2(texture2D(colortex4, texCoordM).a); // including attenuation through fog and clouds
             bool validReflectionStrength = abs(fresnelM - 0.5) < 0.5;
 
+            float reflectionFade = 1.0;
             #if defined DISTANT_HORIZONS || defined VOXY
-                fresnelM *= 1.0 - smoothstep(0.8, 1.05, lViewPos / far);
+                reflectionFade = 1.0 - smoothstep(0.8, 1.05, lViewPos / far);
+                fresnelM *= reflectionFade;
             #endif
 
             if (validReflectionStrength && abs(fresnelM - 0.5) < 0.5) {
@@ -185,14 +187,9 @@ void main() {
                 }
                 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
                     else { // Translucents
-                        vec4 ssrReflection = texture2D(colortex8, texCoordM);
-                        color = max(color - ssrReflection.rgb, vec3(0.0));
-
-                        compositeReflection.rgb *= fresnelM;
-                        compositeReflection = mix(compositeReflection, ssrReflection, float(ssrReflection.a > 0.999));
-                        vec3 combinedRef = mix(ssrReflection.rgb, compositeReflection.rgb, compositeReflection.a);
-
-                        color += combinedRef;
+                        vec4 reflectionBackground = texture2D(colortex8, texCoordM);
+                        color = max(color - reflectionBackground.rgb * compositeReflection.a * reflectionFade, vec3(0.0));
+                        color += compositeReflection.rgb * fresnelM * (1.0 - reflectionBackground.a);
                     }
                 #endif
             }

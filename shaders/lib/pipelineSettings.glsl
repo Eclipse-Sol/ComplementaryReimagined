@@ -6,7 +6,7 @@ const int colortex3Format = RGBA8;          //(cloud/water map on deferred/gbuff
 const int colortex5Format = R8;             //cloud linear depth & volumetric light factor
 const int colortex6Format = RGB8;           //smoothnessD & materialMask & skyLightFactor
 const int colortex7Format = RGBA16F;        //(cloud/water map on gbuffer) | reflection temporal image (rgb) & previous depth
-const int colortex8Format = RGBA16F;        //SSR results for WSR, topmost translucent opacity
+const int colortex8Format = RGBA16F;        //background reflection for WSR to replace (rgb) & SSR coverage (a)
 const int colortex9Format = R11F_G11F_B10F; //scene image for reflections
 
 const int colortex12Format = RGBA8;         //Improved Rain
