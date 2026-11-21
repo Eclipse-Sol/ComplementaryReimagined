@@ -476,6 +476,7 @@ float GetCellEntryDistance(vec3 origin, vec3 rayDir, ivec3 cell, out uint entryA
 
 vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, vec3 rayGradY, vec3 curvatureGradX, vec3 curvatureGradY,
                    float RVdotU, float RVdotS, float dither, out float traceLength, float startOffset) {
+    const float boundaryOverlap = 0.001;
     #if WORLD_SPACE_SHAPES > 0
         ivec3 storageOrigin = PositiveModulo(GetReflectionVolumeOrigin(), sceneVoxelVolumeSize);
         int packedRegionOrigin = GetPackedRegionTileOffset();
@@ -519,7 +520,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
         }
         float positionDistance = traceLength
                                - (family == WSR_FAMILY_NONE && material != 10068u
-                                  && !IsReflectionCutoutCube(int(material)) ? 0.001 : 0.0);
+                                  && !IsReflectionCutoutCube(int(material)) ? boundaryOverlap : 0.0);
         vec3 position = playerPos + positionDistance * rayDir;
         vec4 reflection = GetShadedReflection(cell, playerPos, position, rayDir, rayGradX, rayGradY,
                                               curvatureGradX, curvatureGradY, normal, surfaceNormal, material,
@@ -577,7 +578,8 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                     ivec3 lodStorage = WrapReflectionStoragePosition(ivec3(voxelPosRT1), storageOrigin / 4, sceneVoxelLodVolumeSize);
                     if (texelFetch(wsr_lod_sampler, lodStorage, 0).r > 0u) {
                         float dist0 = 0.0;
-                        vec3 voxelPosRT0 = basePos + (4.0 * dist1 - 0.001) * rayDir; // consistency59SMG32: 0.001 offset to fix rare wsr glitches
+                        float backstep = min(boundaryOverlap, (startDist - traceStart) + 4.0 * dist1);
+                        vec3 voxelPosRT0 = basePos + (4.0 * dist1 - backstep) * rayDir;
                         vec3 nextDist0 = (stepDir * 0.5 + 0.5 - fract(voxelPosRT0)) / rayDir;
 
                         vec3 lodVoxelMin = floor(voxelPosRT1) * 4.0;
@@ -595,9 +597,9 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                                     mat = cellMat;
                                     cell = fetchCell;
                                     hitStepAxis = uint(stepAxis.x) | (uint(stepAxis.y) << 1u) | (uint(stepAxis.z) << 2u);
-                                    hitDist = startDist + 4.0 * dist1 + dist0;
+                                    hitDist = startDist + 4.0 * dist1 + dist0 + (boundaryOverlap - backstep);
                                     float cellExit = minOf(nextDist0);
-                                    cellExitDist = startDist + 4.0 * dist1 + cellExit - 0.001;
+                                    cellExitDist = startDist + 4.0 * dist1 + cellExit - backstep;
                                     uvec3 exitStep = uvec3(equal(nextDist0, vec3(cellExit)));
                                     exitAxis = exitStep.x | (exitStep.y << 1u) | (exitStep.z << 2u);
                                     break;
@@ -637,7 +639,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
             vec3 hitAxis = hitStep * vec3(equal(hitWeight, vec3(maxOf(hitWeight))));
             hitAxis *= vec3(1.0, 1.0 - hitAxis.x, (1.0 - hitAxis.x) * (1.0 - hitAxis.y));
             vec3 normal = -hitAxis * stepDir;
-            vec3 intersection = playerPos + (traceLength - (IsReflectionCutoutCube(int(mat)) ? 0.0 : 0.001)) * rayDir;
+            vec3 intersection = playerPos + (traceLength - (IsReflectionCutoutCube(int(mat)) ? 0.0 : boundaryOverlap)) * rayDir;
             vec3 surfaceNormal = normal;
             bool hit = true;
             uint surfaceIndex = 0u;
