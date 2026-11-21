@@ -280,6 +280,9 @@ vec2 lmCoord;
 
 #if COLORED_LIGHTING_INTERNAL > 0
     layout(r32ui) uniform uimage3D voxel_img;
+    #ifdef ACT_BRICK_SKIP
+        writeonly uniform uimage3D actBrick_img;
+    #endif
 
     #ifdef PUDDLE_VOXELIZATION
         writeonly uniform uimage2D puddle_img;
@@ -418,6 +421,9 @@ void main() {
                             vec3 voxelPos = SceneToVoxel(position.xyz);
                             if (CheckInsideVoxelVolume(voxelPos)) {
                                 imageAtomicMax(voxel_img, ivec3(voxelPos), uint(lightId) + ITEM_LIGHT_VOXEL_OFFSET);
+                                #ifdef ACT_BRICK_SKIP
+                                    MarkNonDeterministicLightSource(ivec3(voxelPos));
+                                #endif
                             }
                         }
                     }
@@ -430,6 +436,9 @@ void main() {
                         vec3 voxelPos = SceneToVoxel(position.xyz);
                         if (CheckInsideVoxelVolume(voxelPos)) {
                             imageAtomicMax(voxel_img, ivec3(voxelPos), uint(lightId) + ENTITY_LIGHT_VOXEL_OFFSET);
+                            #ifdef ACT_BRICK_SKIP
+                                MarkNonDeterministicLightSource(ivec3(voxelPos));
+                            #endif
                         }
                     }
                 }

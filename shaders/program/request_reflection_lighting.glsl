@@ -7,7 +7,11 @@
 #include "/lib/voxelization/reflectionHitRecord.glsl"
 
 layout(local_size_x = 8, local_size_y = 8) in;
-const vec2 workGroupsRender = vec2(0.125 * WSR_REFLECTION_SCALE);
+#if WSR_REFLECTION_SCALE == 0.5
+    const vec2 workGroupsRender = vec2(0.0625, 0.0625);
+#else
+    const vec2 workGroupsRender = vec2(0.125, 0.125);
+#endif
 
 bool RequestReflectionLightingTile(uint tileIndex, uvec4 key, uint currentFrame) {
     uint published = currentFrame << 1u, busy = published | 1u;

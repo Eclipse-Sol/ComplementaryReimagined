@@ -1,10 +1,40 @@
 #ifndef INCLUDE_VOXELIZATION
     #define INCLUDE_VOXELIZATION
 
+    #ifdef ACT_BRICK_SKIP_LOOKUP
+        #extension GL_ARB_shader_bit_encoding : enable
+    #endif
+
     #if COLORED_LIGHTING_INTERNAL <= 512
         const ivec3 voxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, COLORED_LIGHTING_INTERNAL * 0.5, COLORED_LIGHTING_INTERNAL);
     #else
         const ivec3 voxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, 512 * 0.5, COLORED_LIGHTING_INTERNAL);
+    #endif
+
+    const ivec3 brickGrid = voxelVolumeSize >> 3;
+    const uint volumeBrickCount = uint(brickGrid.x * brickGrid.y * brickGrid.z);
+    const int actLayerLightSource = 2;
+    const int actLayerState = 3;
+    const uint actFlagAnyLight = 1u;
+    const uint actFlagAnyChange = 2u;
+    const uint actFlagFaceShift = 2u;
+    const uint actCheckSolidVoxels = 1u << 8u;
+
+    ivec3 GetBrickFlagTexel(ivec3 storageBrick, int layer) {
+        return storageBrick + ivec3(0, 0, layer * brickGrid.z);
+    }
+
+    // Corner i (bit 0 x, bit 1 y, bit 2 z picks hi) of the box from lo to hi
+    ivec3 PickBoxCorner(ivec3 lo, ivec3 hi, int i) {
+        return ivec3((i & 1) != 0 ? hi.x : lo.x, (i & 2) != 0 ? hi.y : lo.y, (i & 4) != 0 ? hi.z : lo.z);
+    }
+
+    #ifdef SHADOWCOMP
+        #define OPTIMIZATION_ACT_BEHIND_PLAYER
+        #define OPTIMIZATION_ACT_HALF_RATE_SPREADING
+        #if defined OPTIMIZATION_ACT_BEHIND_PLAYER && !defined COLORED_LIGHT_FOG
+            #define ACT_RETAIN_BEHIND_PLAYER // behind-player texels are not stored, so the old light stays
+        #endif
     #endif
 
     #ifdef COLORED_DYNAMIC_LIGHTING
@@ -27,13 +57,15 @@
     }
 
     bool CheckInsideVoxelVolume(vec3 voxelPos) {
-        #ifndef SHADOW
+        #ifdef SHADOW
+            return all(greaterThanEqual(voxelPos, vec3(0.0))) && all(lessThan(voxelPos, vec3(voxelVolumeSize)));
+        #else
             voxelPos -= voxelVolumeSize / 2;
             voxelPos += sign(voxelPos) * 0.95;
             voxelPos += voxelVolumeSize / 2;
+            voxelPos /= vec3(voxelVolumeSize);
+            return clamp01(voxelPos) == voxelPos;
         #endif
-        voxelPos /= vec3(voxelVolumeSize);
-        return clamp01(voxelPos) == voxelPos;
     }
 
     uint GetVoxelVolume(ivec3 pos) {
@@ -44,7 +76,41 @@
         return texelFetch(voxel_sampler, pos, 0).x;
     }
 
-    vec4 GetComplexLightVolume(vec3 pos, sampler3D ff_sampler) {
+    #if defined ACT_TRACK_CAMERA_DELTA || (defined SHADOW && defined VERTEX_SHADER && defined ACT_BRICK_SKIP) || defined SHADOWCOMP || defined ACT_VOXEL_CLEAR
+        #include "/lib/voxelization/actState.glsl"
+    #endif
+
+    ivec3 GetFloodfillCameraBlock() {
+        #ifdef ACT_TRACK_CAMERA_DELTA
+            return GetHistoryCameraBlock(0);
+        #else
+            return cameraPositionBestInt;
+        #endif
+    }
+
+    ivec3 GetLightStorageOffset(ivec3 cameraBlock) {
+        #if COLORED_LIGHTING_INTERNAL == 128 || COLORED_LIGHTING_INTERNAL == 256 || COLORED_LIGHTING_INTERNAL == 512 || COLORED_LIGHTING_INTERNAL == 1024
+            return (cameraBlock - voxelVolumeSize / 2) & (voxelVolumeSize - 1);
+        #else
+            return (cameraBlock - voxelVolumeSize / 2 + voxelVolumeSize * 1048576) % voxelVolumeSize;
+        #endif
+    }
+
+    ivec3 GetCurrentLightStorageOffset() {
+        return GetLightStorageOffset(GetFloodfillCameraBlock());
+    }
+
+    ivec3 VoxelToLightStorage(ivec3 voxelPos, ivec3 storageOffset) {
+        ivec3 storagePos = voxelPos + storageOffset;
+        return storagePos - voxelVolumeSize * ivec3(greaterThanEqual(storagePos, voxelVolumeSize));
+    }
+
+    ivec3 LightStorageToVoxel(ivec3 storagePos, ivec3 storageOffset) {
+        ivec3 voxelPos = storagePos - storageOffset;
+        return voxelPos + voxelVolumeSize * ivec3(lessThan(voxelPos, ivec3(0)));
+    }
+
+    vec4 GetComplexLightVolume(vec3 pos, sampler3D ff_sampler, int flagLayer) {
         vec4 lightVolume = vec4(0.0);
 
         #ifndef ACT_CORNER_LEAK_FIX_ALL_PASSES
@@ -53,14 +119,43 @@
             #endif
         #endif
 
+        ivec3 storageOffset = GetCurrentLightStorageOffset();
+
         #ifndef ACT_CORNER_LEAK_FIX
-            lightVolume = texture(ff_sampler, pos);
+            // Hardware filtering at the stored position.
+            // Within half a texel of the storage wrap the filter would need texels from both ends, so we'd have it done by hand there.
+            vec3 voxelPos = clamp(pos * vec3(voxelVolumeSize), vec3(0.5), vec3(voxelVolumeSize) - 0.5);
+            vec3 storagePos = voxelPos + vec3(storageOffset);
+            storagePos -= vec3(voxelVolumeSize) * vec3(greaterThanEqual(storagePos, vec3(voxelVolumeSize)));
+            if (all(greaterThanEqual(storagePos, vec3(0.5))) && all(lessThanEqual(storagePos, vec3(voxelVolumeSize) - 0.5))) {
+                lightVolume = texture(ff_sampler, storagePos / vec3(voxelVolumeSize));
+            } else {
+                vec3 texPos = storagePos - 0.5;
+                ivec3 base = ivec3(floor(texPos));
+                vec3 frac = texPos - vec3(base);
+                for (int z = 0; z <= 1; z++) for (int y = 0; y <= 1; y++) for (int x = 0; x <= 1; x++) {
+                    ivec3 texel = base + ivec3(x, y, z);
+                    texel += voxelVolumeSize * (ivec3(lessThan(texel, ivec3(0))) - ivec3(greaterThanEqual(texel, voxelVolumeSize)));
+                    vec3 w = mix(1.0 - frac, frac, vec3(x, y, z));
+                    lightVolume += w.x * w.y * w.z * texelFetch(ff_sampler, texel, 0);
+                }
+            }
         #else
             // Manual light filtering - Optimized by Gemini - I don't like AI either but my version was so much slower :(
             ivec3 posTX = ivec3(pos * voxelVolumeSize);
             vec3 texPos = pos * vec3(voxelVolumeSize) - 0.5;
             ivec3 base  = ivec3(floor(texPos));
             vec3 frac   = fract(texPos);
+
+            #ifdef ACT_BRICK_SKIP_LOOKUP
+                ivec3 brickLo = VoxelToLightStorage(clamp(base, ivec3(0), voxelVolumeSize - 1), storageOffset) >> 3;
+                ivec3 brickHi = VoxelToLightStorage(clamp(base + 1, ivec3(0), voxelVolumeSize - 1), storageOffset) >> 3;
+                uint brickFlags = 0u;
+                for (int i = 0; i < 8; i++)
+                    brickFlags |= texelFetch(actBrick_sampler, GetBrickFlagTexel(PickBoxCorner(brickLo, brickHi, i), flagLayer), 0).r;
+                if ((brickFlags & actFlagAnyLight) == 0u) return vec4(0.0);
+                bool checkVoxels = (brickFlags & actCheckSolidVoxels) != 0u;
+            #endif
 
             vec3 w[2] = vec3[2](1.0 - frac, frac);
             float lightDivide = 0.0;
@@ -88,11 +183,15 @@
                             if (!reachable) continue;
                         }
 
-                        // Skip Solids
-                        if (int(GetVoxelVolume(p)) == 1) continue;
+                        vec4 cornerLight = texelFetch(ff_sampler, VoxelToLightStorage(p, storageOffset), 0);
+                        #ifdef ACT_BRICK_SKIP_LOOKUP
+                            if (checkVoxels ? GetVoxelVolume(p) == 1u : floatBitsToUint(cornerLight.r) == 0x80000000u) continue;
+                        #else
+                            if (GetVoxelVolume(p) == 1u) continue;
+                        #endif
 
                         float weight = w[x].x * w[y].y * w[z].z;
-                        lightVolume += weight * texelFetch(ff_sampler, p, 0);
+                        lightVolume += weight * cornerLight;
                         lightDivide += weight;
                     }
                 }
@@ -108,9 +207,9 @@
         vec4 lightVolume = vec4(0.0);
 
         if (int(framemod2) == 0) {
-            lightVolume = GetComplexLightVolume(pos, floodfill_sampler_copy);
+            lightVolume = GetComplexLightVolume(pos, floodfill_sampler_copy, 1);
         } else {
-            lightVolume = GetComplexLightVolume(pos, floodfill_sampler);
+            lightVolume = GetComplexLightVolume(pos, floodfill_sampler, 0);
         }
 
         return lightVolume;
@@ -401,6 +500,21 @@
         return 1; // Standard Block
     }
 
+    #if defined SHADOW && defined VERTEX_SHADER && defined ACT_BRICK_SKIP
+        // Light sources mark their brick so the floodfill never skips a brick that holds one
+        void MarkLightSourceBrick(ivec3 storagePos) {
+            ivec3 storageBrick = storagePos >> 3;
+            imageStore(actBrick_img, GetBrickFlagTexel(storageBrick, actLayerLightSource), uvec4(1u));
+        }
+
+        // imageAtomicMax into voxels that terrain may also write, so the final value can differ between frames for the same scene
+        void MarkNonDeterministicLightSource(ivec3 voxelPos) {
+            ivec3 storagePos = VoxelToLightStorage(voxelPos, GetCurrentLightStorageOffset());
+            MarkLightSourceBrick(storagePos);
+            MarkConflictingBrick(storagePos);
+        }
+    #endif
+
     #if defined SHADOW && defined VERTEX_SHADER
         void UpdateVoxelMap(int mat) {
             if (mat == 32000 // Water
@@ -424,12 +538,22 @@
 
             if (CheckInsideVoxelVolume(voxelPos)) {
                 int voxelData = GetVoxelIDs(mat);
+                #ifdef ACT_BRICK_SKIP
+                    ivec3 storagePos = VoxelToLightStorage(ivec3(voxelPos), GetCurrentLightStorageOffset());
+                    if (uint(voxelData - 2) < 198u) MarkLightSourceBrick(storagePos);
+                #endif
 
                 #if defined GBUFFERS_COLORWHEEL || defined SHADOW_COLORWHEEL
                     voxelData = voxelData | 32768;
                 #endif
 
-                imageStore(voxel_img, ivec3(voxelPos), uvec4(voxelData, 0u, 0u, 0u));
+                #ifdef ACT_BRICK_SKIP
+                    uint previous = imageAtomicExchange(voxel_img, ivec3(voxelPos), uint(voxelData));
+                    if (previous == 0u) HashVoxelWrite(storagePos, uint(voxelData));
+                    else if (previous != uint(voxelData)) MarkConflictingBrick(storagePos);
+                #else
+                    imageStore(voxel_img, ivec3(voxelPos), uvec4(voxelData, 0u, 0u, 0u));
+                #endif
             }
         }
     #endif

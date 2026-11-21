@@ -158,6 +158,9 @@ uniform vec3 previousCameraPositionFract;
     uniform usampler3D voxel_sampler;
     uniform sampler3D floodfill_sampler;
     uniform sampler3D floodfill_sampler_copy;
+    #ifdef ACT_BRICK_SKIP_LOOKUP
+        uniform usampler3D actBrick_sampler;
+    #endif
 #endif
 
 #ifdef PUDDLE_VOXELIZATION

@@ -41,6 +41,11 @@
         #define COLORED_LIGHTING_INTERNAL COLORED_LIGHTING
         #if COLORED_LIGHTING_INTERNAL > 0
             #define COLORED_LIGHT_FOG
+            #define ACT_BRICK_FLAGS
+            #ifdef ACT_BRICK_FLAGS
+                #define ACT_BRICK_SKIP
+                #define ACT_BRICK_SKIP_LOOKUP
+            #endif
             #if ENTITY_SHADOW >= 1
                 #define COLORED_DYNAMIC_LIGHTING
             #endif
@@ -799,10 +804,13 @@
 
     #if IRIS_VERSION >= 10800
         ivec3 cameraPositionBestInt = cameraPositionInt;
+        ivec3 previousCameraPositionBestInt = previousCameraPositionInt;
         vec3 cameraPositionBestFract = cameraPositionFract;
         vec3 previousCameraPositionBestFract = previousCameraPositionFract;
     #else
+        #define ACT_TRACK_CAMERA_DELTA
         ivec3 cameraPositionBestInt = ivec3(floor(cameraPosition));
+        ivec3 previousCameraPositionBestInt = ivec3(floor(previousCameraPosition));
         vec3 cameraPositionBestFract = fract(cameraPosition);
         vec3 previousCameraPositionBestFract = fract(previousCameraPosition);
     #endif

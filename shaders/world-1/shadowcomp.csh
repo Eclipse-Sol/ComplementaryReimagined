@@ -4,4 +4,4 @@
 #define NETHER
 #define SHADOWCOMP
 
-#include "/program/shadowcomp.glsl"
+#include "/program/shadowcomp_bricks.glsl"

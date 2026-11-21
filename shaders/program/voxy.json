@@ -55,6 +55,7 @@
         "cameraPosition",
         "previousCameraPosition",
         "cameraPositionInt",
+        "previousCameraPositionInt",
         "cameraPositionFract",
         "previousCameraPositionFract",
         "fogColor",
