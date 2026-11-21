@@ -8,7 +8,8 @@ int GetModelTableShapePartCount(int family, int model) {
     if (family == WSR_FAMILY_MODEL_MISC)
         return model == 0 ? 4
              : (model == 1 ? 2
-             : (model == 2 ? 6 : 0));
+             : (model == 2 ? 6
+             : (model == 3 ? 2 : 0)));
     if (family == WSR_FAMILY_MODEL_TURTLE_EGG) return model == 0 ? 4 : 0;
     return 0;
 }
@@ -120,6 +121,21 @@ bool GetModelTableShapeBox(int family, int model, uint state, int part, out vec3
             if ((state & 1u) != 0u) {
                 boxMin = boxMin.zyx;
                 boxMax = boxMax.zyx;
+            }
+        } else if (model == 3) {
+            // Chests!
+            uint front = (state >> 4u) & ~state & 15u;
+            if (part == 0) {
+                boxMin = vec3((state & 1u) != 0u ? 0.0 : 1.0, 0.0, (state & 4u) != 0u ? 0.0 : 1.0);
+                boxMax = vec3((state & 2u) != 0u ? 16.0 : 15.0, 14.0, (state & 8u) != 0u ? 16.0 : 15.0);
+            } else {
+                if (front == 0u) return false;
+                bool alongX = (front & 3u) != 0u;
+                uint sides = alongX ? (state >> 2u) & 3u : state & 3u;
+                vec2 across = sides == 1u ? vec2(0, 1) : (sides == 2u ? vec2(15, 16) : vec2(7, 9));
+                vec2 depth = (front & 5u) != 0u ? vec2(0, 1) : vec2(15, 16);
+                boxMin = alongX ? vec3(depth.x, 7, across.x) : vec3(across.x, 7, depth.x);
+                boxMax = alongX ? vec3(depth.y, 11, across.y) : vec3(across.y, 11, depth.y);
             }
         } else if (model == 1) {
             boxMin = part == 0 ? vec3(0) : vec3(4, 13, 4);

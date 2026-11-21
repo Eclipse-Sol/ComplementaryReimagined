@@ -78,6 +78,12 @@ uint ComputeModelTableShapeState(int family, int model, vec3 local) {
     if (family == WSR_FAMILY_MODEL_CUBOID && model == 2) {
         return abs(local.x - 0.9375) > 0.002 ? uint(round(clamp((local.x - 0.0625) * 8.0, 0.0, 6.0))) : 0u;
     }
+    if (family == WSR_FAMILY_MODEL_MISC && model == 3) {
+        uint edges = uint(local.x < 0.002) | (uint(local.x > 0.998) << 1u)
+                   | (uint(local.z < 0.002) << 2u) | (uint(local.z > 0.998) << 3u);
+        float y = local.y * 16.0;
+        return abs(y - 7.0) < 0.03 || abs(y - 11.0) < 0.03 ? edges << 4u : edges;
+    }
     vec3 distance = abs(local - 0.5);
     if (family == WSR_FAMILY_MODEL_ROD) {
         bvec3 wide = lessThan(abs(distance - 0.125), vec3(0.002));

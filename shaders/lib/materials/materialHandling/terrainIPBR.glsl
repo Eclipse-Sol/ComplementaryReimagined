@@ -2878,14 +2878,26 @@ if (mat < 11024) {
 }
 
 #if defined DURING_WORLDSPACE_REF
-    else { // Terrain portions of signs, beds, and bell
+    else { // Terrain portions of block entities: signs, beds, bell, and models baked by Enhanced Block Entities
         if (mat == 5004 || mat == 5016) noSmoothLighting = true;
-        else if (mat == 5028) {
+        else if (mat == 5008) { // Chest
+            noSmoothLighting = true;
+            smoothnessG = pow2(color.g);
+        } else if (mat == 5012) { // Ender Chest
+            noSmoothLighting = true;
+            float factor = min(pow2(color.g), 0.25);
+            smoothnessG = factor * 2.0;
+            if (color.g > color.r || color.b > color.g)
+                emission = pow2(factor) * 20.0;
+            emission += 0.35;
+        } else if (mat == 5028) {
             if (color.r + color.g > color.b + 0.5) {
                 #include "/lib/materials/specificMaterials/terrain/goldBlock.glsl"
             } else {
                 #include "/lib/materials/specificMaterials/terrain/stone.glsl"
             }
+        } else if (mat == 5032) { // Copper Chest
+            #include "/lib/materials/specificMaterials/terrain/copperBlock.glsl"
         }
     }
 #elif defined GBUFFERS_TERRAIN

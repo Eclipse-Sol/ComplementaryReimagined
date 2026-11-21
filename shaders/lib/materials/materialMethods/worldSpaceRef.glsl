@@ -659,7 +659,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                         intersection = playerPos + traceLength * rayDir;
                         surfaceNormal = normal;
                         vec3 surfaceLocal = PlayerToSceneVoxel(intersection) - vec3(cell);
-                        surfaceIndex = SelectShapeRecord(surfaceLocal, normal, cellRef);
+                        surfaceIndex = SelectShapeRecord(surfaceLocal, normal, cellRef, shapeRecordCapacity);
                         hit = surfaceIndex < shapeRecordCapacity;
                     }
                 }
@@ -682,10 +682,18 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
             }
 
             vec4 reflection = vec4(-1.0);
-            if (hit)
+            for (int pick = 0; pick < 2 && hit; pick++) {
                 reflection = GetShadedReflection(cell, playerPos, intersection, rayDir, rayGradX, rayGradY,
                                                  curvatureGradX, curvatureGradY, normal, surfaceNormal, mat, dither,
                                                  surfaceIndex, cellRef, storageOrigin);
+                #if WORLD_SPACE_SHAPES > 0
+                    if (reflection.a > -0.5 || family == WSR_FAMILY_NONE) break;
+                    surfaceIndex = SelectShapeRecord(PlayerToSceneVoxel(intersection) - vec3(cell), normal, cellRef, surfaceIndex);
+                    hit = surfaceIndex < shapeRecordCapacity;
+                #else
+                    break;
+                #endif
+            }
             #if WORLD_SPACE_SHAPES > 0
                 if (hasSurfaces) {
                     float limit = reflection.a > -0.5 ? traceLength : cellExitDist;

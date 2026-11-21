@@ -20,7 +20,7 @@
 #define WSR_MODEL(family, material, model) (uint(material) | (uint(family) << 16u) | (uint(model) << 24u))
 // Captured-surface IDs must stay below 22050: records keep rawMat - 20002 in 11 bits.
 const int wsrModelFirst = 21202;
-const int wsrModelEnd = 21236;
+const int wsrModelEnd = 21240;
 const uint wsrModelTable[wsrModelEnd - wsrModelFirst] = uint[wsrModelEnd - wsrModelFirst](
     WSR_MODEL(WSR_FAMILY_CAPTURED, 5004, 0),            // 21202 sign
     WSR_MODEL(WSR_FAMILY_CAPTURED, 5028, 0),            // 21203 bell
@@ -55,7 +55,11 @@ const uint wsrModelTable[wsrModelEnd - wsrModelFirst] = uint[wsrModelEnd - wsrMo
     WSR_MODEL(WSR_FAMILY_MODEL_TURTLE_EGG, 10569, 0),   // 21232 turtle_egg
     WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 10175, 5),       // 21233 chiseled_bookshelf
     WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 10153, 6),       // 21234 upward extended piston base
-    WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 10927, 7)        // 21235 flat pale_moss_carpet
+    WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 10927, 7),       // 21235 flat pale_moss_carpet
+    WSR_MODEL(WSR_FAMILY_MODEL_MISC, 5008, 3),          // 21236 chest
+    WSR_MODEL(WSR_FAMILY_MODEL_MISC, 5012, 3),          // 21237 ender_chest
+    WSR_MODEL(WSR_FAMILY_MODEL_MISC, 5032, 3),          // 21238 copper_chest
+    WSR_MODEL(WSR_FAMILY_MODEL_CUBOID, 5016, 3)         // 21239 shulker_box
 );
 
 bool IsReflectionCutoutCube(int mat) {
