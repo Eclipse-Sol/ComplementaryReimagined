@@ -153,9 +153,19 @@ void main() {
                         vec2(-1.0,-1.0)
                     );
 
+                    vec4 refSamples[4];
                     for (int i = 0; i < 4; i++) {
-                        vec4 compositeRefSample = texture2D(colortex7, texCoordM + refOffsets[i] * 1.5 / view);
-                        if (compositeRefSample.a > compositeReflection.a * 1.01) compositeReflection = compositeRefSample;
+                        refSamples[i] = texture2D(colortex7, texCoordM + refOffsets[i] * 1.5 / view);
+                    }
+
+                    float gapAlpha = compositeReflection.a * 1.01;
+                    for (int i = 0; i < 2; i++) {
+                        vec4 refA = refSamples[i];
+                        vec4 refB = refSamples[3 - i];
+                        if (min(refA.a, refB.a) > gapAlpha) {
+                            compositeReflection = refA.a > refB.a ? refA : refB;
+                            gapAlpha = compositeReflection.a * 1.01;
+                        }
                     }
                 }
             #endif
