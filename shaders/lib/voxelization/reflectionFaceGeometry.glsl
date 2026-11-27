@@ -7,4 +7,7 @@ int GetReflectionFaceIndex(vec3 direction) {
     return axis * 2 + int(direction[axis] > 0.0);
 }
 
+const uint reflectionAllFacesMask = 0x3fu;
+const uint reflectionTopFace = 3u;
+
 #endif

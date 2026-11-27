@@ -17,7 +17,13 @@ const ivec3 workGroups = ivec3(8192, 1, 1);
 #endif
 
 void main() {
-    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0
+    #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0 && defined SHAPE_CORNER_MERGE
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            uint entries = min(shapeHeadSSBO.shapeCornerLightingCount, shapeCornerLightingCapacity);
+            uint entryStride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+            for (uint entry = gl_GlobalInvocationID.x; entry < entries; entry += entryStride) MergeShapeCornerLighting(entry);
+        #endif
+    #elif WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0
         uint capturedRecordCount = GetCapturedShapeRecordCount();
         uint haloRecordCount = shapeDataSSBO.haloRecordCount;
         #ifdef SHAPE_RESOLVE

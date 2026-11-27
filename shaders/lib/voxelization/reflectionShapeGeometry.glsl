@@ -36,7 +36,18 @@ bool IsShapeBoundsRecord(uint flags) {
 }
 
 const uint shapeFlagsMask = 0xff000000u;
-const uint shapeVoxelIndexMask = 0xffffffu;
+const uint shapeVoxelIndexBits = 24u;
+const uint shapeVoxelIndexMask = (1u << shapeVoxelIndexBits) - 1u;
+const uint shapeMappingCellHighShift = 28u;
+const uint shapeMappingCellHighMask = 3u << shapeMappingCellHighShift;
+
+uint GetShapeMappingCellHighBits(int voxelIndex) {
+    #ifdef WSR_TALL_VOLUME
+        return (uint(voxelIndex) >> shapeVoxelIndexBits) << shapeMappingCellHighShift;
+    #else
+        return 0u;
+    #endif
+}
 const uint shapeMappingSegmentEndpoint = 0x80000000u;
 
 bool IsShapeSecondaryPlane(uint flags) {

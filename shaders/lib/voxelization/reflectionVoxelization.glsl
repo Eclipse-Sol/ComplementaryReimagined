@@ -92,7 +92,7 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
         uint index = atomicAdd(blockDataSSBO.cornerCaptureCount, 1u);
         if (index >= reflectionCornerCaptureCapacity) return;
         uint word = uint(reflectionCornerCaptureBase) + 2u * index;
-        blockDataSSBO.words[word] = uint(GetSceneVoxelIndex(cell)) | (uint(GetReflectionFaceIndex(normal)) << 24u);
+        blockDataSSBO.words[word] = uint(GetSceneVoxelIndex(cell)) | (uint(GetReflectionFaceIndex(normal)) << sceneVoxelIndexBits);
         blockDataSSBO.words[word + 1u] = GetCapturedReflectionCornerLighting(normal);
     }
     #endif

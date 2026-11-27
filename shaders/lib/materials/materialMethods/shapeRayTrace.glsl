@@ -163,8 +163,7 @@ float IntersectReflectionShapeBoxes(vec3 origin, vec3 rayDir, int family, int mo
     return nearest <= maxDist ? nearest : -1.0;
 }
 
-uint SelectShapeRecord(vec3 local, vec3 normal, reflectionCellHandle cellRef, uint excluded) {
-    uint head = GetShapeRecordHead(cellRef);
+uint SelectShapeRecord(vec3 local, vec3 normal, uint head, uint excluded) {
     uint selected = shapeRecordCapacity;
     float bestScore = -1e10;
     uint tieBreak = 0xffffffffu;
@@ -186,8 +185,11 @@ uint SelectShapeRecord(vec3 local, vec3 normal, reflectionCellHandle cellRef, ui
         uvec4 mapping = shapeDataSSBO.records[index].mapping;
         uint flags = shapeDataSSBO.records[index].shading.w;
         uint link = shapeDataSSBO.records[index].shading.y;
+        // Same-face link, split over four fields:
+        // shading.y 0-15, mapping.z 28-31, mapping.y 30, mapping.x 24-26.
         head = matchingFaces
              ? (link & 65535u) | ((mapping.z >> 28u) << 16u) | (((mapping.y >> 30u) & 1u) << 20u)
+             | (((mapping.x >> 24u) & 7u) << 21u)
              : GetCompactNextShapeRecord(flags, mapping.x);
         if (!IsShapeResolvedCuboid(flags) || index == excluded) continue;
         vec3 delta = local - GetShapeAnchor(mapping.y);

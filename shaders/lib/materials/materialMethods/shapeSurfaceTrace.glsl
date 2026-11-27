@@ -1,10 +1,10 @@
-float IntersectReflectionCapturedSurfaces(ivec3 cell, reflectionCellHandle cellRef, ivec3 storageOrigin, vec3 origin,
+float IntersectReflectionCapturedSurfaces(ivec3 cell, uint head, ivec3 storageOrigin, vec3 origin,
                                           vec3 rayDir, float maxDist, sampler2D atlas,
                                           vec3 positionGradX, vec3 positionGradY, vec3 gradientStepX, vec3 gradientStepY,
                                           out vec3 normal, out uint selected, out uint material) {
     selected = shapeRecordCapacity;
     material = 0u;
-    uint next = GetShapeRecordHead(cellRef);
+    uint next = head;
     float nearest = maxDist + 1.0;
     uint tieBreak = 0xffffffffu, bestLight = 0u;
     for (int i = 0; i < 256 && next > 0u && next <= shapeRecordCapacity; i++) {

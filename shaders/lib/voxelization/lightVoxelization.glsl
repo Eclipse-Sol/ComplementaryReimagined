@@ -68,13 +68,48 @@
         #endif
     }
 
-    uint GetVoxelVolume(ivec3 pos) {
-        return texelFetch(voxel_sampler, pos, 0).x & 32767u;
+    const uint voxelMapLaneMask = 65535u;
+
+    ivec3 GetVoxelMapTexel(ivec3 pos) {
+        return ivec3(pos.x >> 1, pos.yz);
+    }
+
+    uint GetVoxelMapShift(ivec3 pos) {
+        return uint(pos.x & 1) << 4u;
     }
 
     uint GetVoxelVolumeRaw(ivec3 pos) {
-        return texelFetch(voxel_sampler, pos, 0).x;
+        return (texelFetch(voxel_sampler, GetVoxelMapTexel(pos), 0).x >> GetVoxelMapShift(pos)) & voxelMapLaneMask;
     }
+
+    uint GetVoxelVolume(ivec3 pos) {
+        return GetVoxelVolumeRaw(pos) & 32767u;
+    }
+
+    #if defined SHADOW && defined VERTEX_SHADER
+        uint VoxelMapAtomicUpdate(ivec3 pos, uint value, bool keepMax) {
+            ivec3 texel = GetVoxelMapTexel(pos);
+            uint shift = GetVoxelMapShift(pos);
+            uint mask = voxelMapLaneMask << shift;
+            uint old = imageLoad(voxel_img, texel).x;
+            while (true) {
+                uint previous = (old & mask) >> shift;
+                uint updated = (old & ~mask) | ((keepMax ? max(previous, value) : value) << shift);
+                uint seen = imageAtomicCompSwap(voxel_img, texel, old, updated);
+                if (seen == old) return previous;
+                old = seen;
+            }
+            return 0u;
+        }
+
+        uint VoxelMapAtomicExchange(ivec3 pos, uint value) {
+            return VoxelMapAtomicUpdate(pos, value, false);
+        }
+
+        uint VoxelMapAtomicMax(ivec3 pos, uint value) {
+            return VoxelMapAtomicUpdate(pos, value, true);
+        }
+    #endif
 
     #if defined ACT_TRACK_CAMERA_DELTA || (defined SHADOW && defined VERTEX_SHADER && defined ACT_BRICK_SKIP) || defined SHADOWCOMP || defined ACT_VOXEL_CLEAR
         #include "/lib/voxelization/actState.glsl"
@@ -548,11 +583,11 @@
                 #endif
 
                 #ifdef ACT_BRICK_SKIP
-                    uint previous = imageAtomicExchange(voxel_img, ivec3(voxelPos), uint(voxelData));
+                    uint previous = VoxelMapAtomicExchange(ivec3(voxelPos), uint(voxelData));
                     if (previous == 0u) HashVoxelWrite(storagePos, uint(voxelData));
                     else if (previous != uint(voxelData)) MarkConflictingBrick(storagePos);
                 #else
-                    imageStore(voxel_img, ivec3(voxelPos), uvec4(voxelData, 0u, 0u, 0u));
+                    VoxelMapAtomicExchange(ivec3(voxelPos), uint(voxelData));
                 #endif
             }
         }

@@ -1,10 +1,14 @@
-uint GetShapeRecordHead(reflectionCellHandle cell) {
-    return ReadShapeHead(cell);
+uint GetShapeRecordCell(uint flags, uint mappingX) {
+    #ifdef WSR_TALL_VOLUME
+        return (flags & shapeVoxelIndexMask) | (((mappingX & shapeMappingCellHighMask) >> shapeMappingCellHighShift) << shapeVoxelIndexBits);
+    #else
+        return flags & shapeVoxelIndexMask;
+    #endif
 }
 
 ivec3 GetShapeOwnerCell(shapeRecord surface, ivec3 cell, ivec3 storageOrigin) {
     if ((surface.shading.w & shapeFlagCompactLink) != 0u) return cell;
-    ivec3 owner = GetSceneVoxelPosition(surface.shading.w & shapeVoxelIndexMask, storageOrigin);
+    ivec3 owner = GetSceneVoxelPosition(GetShapeRecordCell(surface.shading.w, surface.mapping.x), storageOrigin);
     ivec3 delta = owner - cell;
     owner -= ivec3(greaterThan(delta, sceneVoxelVolumeSize / 2)) * sceneVoxelVolumeSize;
     owner += ivec3(lessThan(delta, -sceneVoxelVolumeSize / 2)) * sceneVoxelVolumeSize;

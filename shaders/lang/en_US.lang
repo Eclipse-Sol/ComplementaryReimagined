@@ -1230,6 +1230,11 @@ option.WORLD_SPACE_SHAPES=WSR Non-Full Blocks
 option.WORLD_SPACE_SHAPES.comment=Reflects supported non-full blocks.
 value.WORLD_SPACE_SHAPES.-1=OFF
 value.WORLD_SPACE_SHAPES.1=ON
+option.WSR_VOLUME_HEIGHT=WSR Height
+option.WSR_VOLUME_HEIGHT.comment=The distance vertically you can see world-space reflections.
+value.WSR_VOLUME_HEIGHT.64=64 Blocks
+value.WSR_VOLUME_HEIGHT.128=128 Blocks
+value.WSR_VOLUME_HEIGHT.256=256 Blocks
 
 option.WSR_REBUILD_PERCENT=WSR Rebuild per Frame
 option.WSR_REBUILD_PERCENT.comment=Amount of time for a full refresh of WSR block data to happen.

@@ -64,7 +64,7 @@
             }
             for (int z = 0; z < 8; z++) {
                 ivec3 storagePos = storageBrick * 8 + ivec3(gl_LocalInvocationID.xy, z);
-                imageStore(voxel_img, LightStorageToVoxel(storagePos, storageOffset), uvec4(0u));
+                imageStore(voxel_img, GetVoxelMapTexel(LightStorageToVoxel(storagePos, storageOffset)), uvec4(0u));
                 if (resetHistory) {
                     imageStore(floodfill_img, storagePos, vec4(0.0));
                     imageStore(floodfill_img_copy, storagePos, vec4(0.0));

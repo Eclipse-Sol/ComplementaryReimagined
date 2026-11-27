@@ -1,10 +1,18 @@
 #ifndef INCLUDE_REFLECTION_VOXEL_VOLUME
 #define INCLUDE_REFLECTION_VOXEL_VOLUME
 
-#if COLORED_LIGHTING < 512
-    const ivec3 sceneVoxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, 64, COLORED_LIGHTING_INTERNAL);
+#if WORLD_SPACE_SHAPES > 0
+    const int sceneVolumeHeight = WSR_VOLUME_HEIGHT;
+    #if WSR_VOLUME_HEIGHT > 64
+        #define WSR_TALL_VOLUME
+    #endif
 #else
-    const ivec3 sceneVoxelVolumeSize = ivec3(512, 64, 512);
+    const int sceneVolumeHeight = 64;
+#endif
+#if COLORED_LIGHTING < 512
+    const ivec3 sceneVoxelVolumeSize = ivec3(COLORED_LIGHTING_INTERNAL, sceneVolumeHeight, COLORED_LIGHTING_INTERNAL);
+#else
+    const ivec3 sceneVoxelVolumeSize = ivec3(512, sceneVolumeHeight, 512);
 #endif
 
 #if WORLD_SPACE_SHAPES > 0
@@ -18,18 +26,40 @@ const ivec3 sceneVoxelCoarseVolumeSize = sceneVoxelVolumeSize / sceneVoxelCoarse
 const ivec3 sceneVoxelLodVolumeSize = sceneVoxelVolumeSize / 4;
 const int lavaCornerCount = (sceneVoxelVolumeSize.x + 1) * sceneVoxelVolumeSize.y * (sceneVoxelVolumeSize.z + 1);
 const int sceneVoxelCount = sceneVoxelVolumeSize.x * sceneVoxelVolumeSize.y * sceneVoxelVolumeSize.z;
-const int reflectionFaceCount = 6 * sceneVoxelCount;
-#if COLORED_LIGHTING >= 384
-    const uint reflectionFaceCapacity = 2097151u;
-#elif COLORED_LIGHTING >= 256
-    const uint reflectionFaceCapacity = 1048575u;
-#elif COLORED_LIGHTING >= 192
-    const uint reflectionFaceCapacity = 524287u;
+#if WORLD_SPACE_SHAPES > 0
+    #define WSR_FACE_LIST
+    const int reflectionFaceRefCount = sceneVoxelCount;
 #else
-    const uint reflectionFaceCapacity = 262143u;
+    const int reflectionFaceRefCount = 6 * sceneVoxelCount;
 #endif
-const uint reflectionFacePointerMask = 4194303u;
-const uint reflectionFaceStampMask = 0xffc00000u;
+#if COLORED_LIGHTING >= 384
+    const uint reflectionFaceBaseCapacity = 2097152u;
+#elif COLORED_LIGHTING >= 256
+    const uint reflectionFaceBaseCapacity = 1048576u;
+#elif COLORED_LIGHTING >= 192
+    const uint reflectionFaceBaseCapacity = 524288u;
+#else
+    const uint reflectionFaceBaseCapacity = 262144u;
+#endif
+#if WSR_VOLUME_HEIGHT == 256 && WORLD_SPACE_SHAPES > 0
+    const uint reflectionFaceCapacity = 2u * reflectionFaceBaseCapacity - 1u;
+#elif WSR_VOLUME_HEIGHT == 128 && WORLD_SPACE_SHAPES > 0
+    const uint reflectionFaceCapacity = 3u * reflectionFaceBaseCapacity / 2u - 1u;
+#else
+    const uint reflectionFaceCapacity = reflectionFaceBaseCapacity - 1u;
+#endif
+#ifdef WSR_TALL_VOLUME
+    const uint reflectionFaceStampShift = 23u;
+#else
+    const uint reflectionFaceStampShift = 22u;
+#endif
+const uint reflectionFacePointerMask = (1u << reflectionFaceStampShift) - 1u;
+const uint reflectionFaceStampMask = ~reflectionFacePointerMask;
+const uint reflectionFaceStampPeriod = 1u << (32u - reflectionFaceStampShift);
+
+uint GetReflectionFaceStamp(uint generation) {
+    return (generation << reflectionFaceStampShift) & reflectionFaceStampMask;
+}
 const uint grassCaptureCapacity = reflectionFaceCapacity / 4u + 1u;
 #define WSR_MAX_REGIONS 20
 const int reflectionActiveRegionCount = int(100.0 / WSR_REBUILD_PERCENT + 0.5);
@@ -124,6 +154,13 @@ struct reflectionCellHandle {
     int storageIndex;
     uint regionGeneration;
 };
+
+#ifdef WSR_TALL_VOLUME
+    const uint sceneVoxelIndexBits = 26u;
+#else
+    const uint sceneVoxelIndexBits = 24u;
+#endif
+const uint sceneVoxelIndexMask = (1u << sceneVoxelIndexBits) - 1u;
 
 int GetSceneVoxelIndexFromStorage(ivec3 p) {
     return p.x + sceneVoxelVolumeSize.x * (p.y + sceneVoxelVolumeSize.y * p.z);

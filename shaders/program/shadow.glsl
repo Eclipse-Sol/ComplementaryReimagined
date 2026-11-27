@@ -420,7 +420,7 @@ void main() {
                         if (!isHeldItem) {
                             vec3 voxelPos = SceneToVoxel(position.xyz);
                             if (CheckInsideVoxelVolume(voxelPos)) {
-                                imageAtomicMax(voxel_img, ivec3(voxelPos), uint(lightId) + ITEM_LIGHT_VOXEL_OFFSET);
+                                VoxelMapAtomicMax(ivec3(voxelPos), uint(lightId) + ITEM_LIGHT_VOXEL_OFFSET);
                                 #ifdef ACT_BRICK_SKIP
                                     MarkNonDeterministicLightSource(ivec3(voxelPos));
                                 #endif
@@ -435,7 +435,7 @@ void main() {
                     if (lightId != 0) {
                         vec3 voxelPos = SceneToVoxel(position.xyz);
                         if (CheckInsideVoxelVolume(voxelPos)) {
-                            imageAtomicMax(voxel_img, ivec3(voxelPos), uint(lightId) + ENTITY_LIGHT_VOXEL_OFFSET);
+                            VoxelMapAtomicMax(ivec3(voxelPos), uint(lightId) + ENTITY_LIGHT_VOXEL_OFFSET);
                             #ifdef ACT_BRICK_SKIP
                                 MarkNonDeterministicLightSource(ivec3(voxelPos));
                             #endif

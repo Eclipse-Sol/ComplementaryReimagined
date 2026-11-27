@@ -27,7 +27,7 @@ uint GetNextShapeRecord(shapeRecord surface) {
 }
 
 vec2 GetShapePlaneSize(shapeRecord surface) {
-    uint mapping = surface.mapping.z, high = surface.mapping.x >> 21u;
+    uint mapping = surface.mapping.z, high = surface.mapping.x >> shapeRecordPointerBits;
     return vec2(((mapping >> 14u) & 511u) | ((high & 3u) << 9u),
                 (mapping >> 23u) | (((high >> 2u) & 3u) << 9u)) / 1024.0;
 }
@@ -41,19 +41,36 @@ vec2 GetShapeCuboidSize(uint mapping) {
     return vec2(size + uvec2(equal(size, uvec2(1023u)))) / 1024.0;
 }
 
-uint GetShapeState(reflectionCellHandle cell) {
-    if (!ReflectionStorageAvailable()) return 0u;
-    uint data = blockDataSSBO.words[reflectionMetadataBase + GetShapeStateWordIndex(cell.storageIndex)];
-    uint regionGeneration = cell.regionGeneration;
-    return regionGeneration != 0u && (data & 0xfffff000u) == ((regionGeneration + 1u) << 12u) ? data & 4095u : 0u;
-}
-
 #include "/lib/voxelization/reflectionSurfaceData.glsl"
 
-#if defined SHADOW && defined VERTEX_SHADER
-    void StoreShapeState(ivec3 p, uint bits) {
-        MergeStampedWord(GetShapeStateWordIndex(GetSceneVoxelIndex(p)), bits, (shapeDataSSBO.captureFrame + 1u) << 12u, false);
+#if defined SHADOW && defined VERTEX_SHADER || defined SHAPE_SCATTER
+    uint GetShapeDistanceBucket(vec3 sceneVoxelPos) {
+        float distance = length(sceneVoxelPos - PlayerToSceneVoxel(vec3(0.0)));
+        return min(uint(distance / shapeDistanceBucketSize), shapeDistanceBucketCount - 1u);
     }
+
+    uint AllocateNearShapeRecord(bool halo, vec3 sceneVoxelPos) {
+        uint bucket = GetShapeDistanceBucket(sceneVoxelPos);
+        uint row = halo ? shapeDistanceHaloRow : shapeDataSSBO.selectedRegion;
+        atomicAdd(shapeHeadSSBO.shapeDistanceDemand[row * shapeDistanceBucketCount + bucket], 1u);
+        if (bucket > shapeHeadSSBO.shapeDistanceCutoff) return shapeRecordCapacity;
+        return AllocateShapeRecord(halo);
+    }
+#endif
+
+#if defined SHADOW && defined VERTEX_SHADER
+    #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+        void AppendShapeCornerLighting(int voxelIndex, bool halo, int corner, uint quadId, uint lighting, vec3 center) {
+            if (GetShapeDistanceBucket(center) > shapeHeadSSBO.shapeDistanceCutoff) return;
+            uint entry = atomicAdd(shapeHeadSSBO.shapeCornerLightingCount, 1u);
+            if (entry >= shapeCornerLightingCapacity) return;
+            uint word = shapeCornerLightingBase + 3u * entry;
+            shapeHeadSSBO.words[word] = uint(voxelIndex) | (halo ? shapeCornerLightingHaloFlag : 0u)
+                                      | (corner == 3 ? shapeCornerLightingCorner3Flag : 0u);
+            shapeHeadSSBO.words[word + 1u] = quadId;
+            shapeHeadSSBO.words[word + 2u] = lighting;
+        }
+    #endif
 
     void UpdateReflectionShape(int rawMat, vec4 terrainTangent) {
         int corner = GetShapeQuadCorner();
@@ -77,16 +94,22 @@ uint GetShapeState(reflectionCellHandle cell) {
         #else
             uint vertexAO = vertexAlpha | (uvCorner << 8u);
         #endif
+        #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+            if ((corner & 1) != 0) {
+                AppendShapeCornerLighting(voxelIndex, !selected, corner, quadId, vertexAO.x, center);
+                return;
+            }
+        #endif
         if ((corner & 1) != 0) {
-            uint index = AllocateShapeRecord(!selected);
+            uint index = AllocateNearShapeRecord(!selected, center);
             if (index >= shapeRecordCapacity) return;
-            uint flags = uint(voxelIndex) | shapeFaceMask | shapeFlagSecondary
+            uint cellSlot = InsertShapeCell(voxelIndex, !selected);
+            uint flags = (uint(voxelIndex) & shapeVoxelIndexMask) | shapeFaceMask | shapeFlagSecondary
                        | (family == WSR_FAMILY_SLAB_STAIR ? shapeFlagOctants : 0u)
                        | (captured ? shapeFlagPlane : 0u);
             shapeDataSSBO.records[index].shading = uvec4(0u, 0u, 0u, flags);
-            shapeDataSSBO.records[index].mapping = uvec4(
-                PushShapeHead(voxelIndex, index + 1u, !selected), 0u, 0u, quadId
-            );
+            shapeDataSSBO.records[index].mapping = uvec4(PushShapeHead(cellSlot, index + 1u) | GetShapeMappingCellHighBits(voxelIndex),
+                                                         0u, 0u, quadId);
             shapeAOSSBO.corners[index] = vertexAO;
             return;
         }
@@ -120,15 +143,21 @@ uint GetShapeState(reflectionCellHandle cell) {
             }
             if (family == WSR_FAMILY_CHORUS && GetReflectionMaterial(rawMat) != 10505) bits |= 64u; // chorus flower
         }
-        if (!captured && (bits != 0u || corner == 0)) StoreShapeState(cell, bits);
+        uint cellSlot = shapeCellCapacity;
+        if (!captured && (bits != 0u || corner == 0)
+            && GetShapeDistanceBucket(center) <= shapeHeadSSBO.shapeDistanceCutoff) {
+            cellSlot = InsertShapeCell(voxelIndex, false);
+            StoreShapeState(cellSlot, bits);
+        }
 
         if (corner == 0 && selected) {
             imageStore(wsr_img, GetSceneVoxelStoragePosition(cell), uvec4(uint(rawMat) | (captured ? 32768u : 0u), 0u, 0u, 0u));
             imageStore(wsr_lod_img, GetSceneVoxelLodStoragePosition(cell / 4), uvec4(1u, 0u, 0u, 0u));
             StoreReflectionCoarseOccupancy(cell);
         }
-        uint index = AllocateShapeRecord(!selected);
+        uint index = AllocateNearShapeRecord(!selected, center);
         if (index >= shapeRecordCapacity) return;
+        if (cellSlot == shapeCellCapacity) cellSlot = InsertShapeCell(voxelIndex, !selected);
         shapeAOSSBO.corners[index] = vertexAO;
         vec3 normal, tangent, bitangent;
         GetReflectionTerrainBasis(gl_Normal, terrainTangent, normal, tangent, bitangent);
@@ -146,14 +175,14 @@ uint GetShapeState(reflectionCellHandle cell) {
             kindFlag = shapeFlagPlane;
         }
         shapeDataSSBO.records[index].shading = uvec4(
-            shading, uint(voxelIndex) | (uint(GetReflectionFaceIndex(normal)) << 24u) | secondaryFlag | kindFlag
+            shading, (uint(voxelIndex) & shapeVoxelIndexMask) | (uint(GetReflectionFaceIndex(normal)) << 24u)
+                     | secondaryFlag | kindFlag
         );
         uint packedAnchor = captured
                           ? anchor.x | (anchor.y << 12u) | ((anchor.z & 255u) << 24u)
                           : anchor.x | (anchor.y << 10u) | (anchor.z << 20u);
-        shapeDataSSBO.records[index].mapping = uvec4(
-            PushShapeHead(voxelIndex, index + 1u, !selected), packedAnchor, basis, quadId
-        );
+        shapeDataSSBO.records[index].mapping = uvec4(PushShapeHead(cellSlot, index + 1u) | GetShapeMappingCellHighBits(voxelIndex),
+                                                     packedAnchor, basis, quadId);
     }
 #endif
 
@@ -252,9 +281,29 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
         #endif
     #endif
 
+    #if defined SHAPE_CORNER_MERGE && WORLD_SPACE_SMOOTH_LIGHTING > 0
+        void MergeShapeCornerLighting(uint entry) {
+            uint word = shapeCornerLightingBase + 3u * entry;
+            uint key = shapeHeadSSBO.words[word];
+            uint quadId = shapeHeadSSBO.words[word + 1u];
+            uint lighting = shapeHeadSSBO.words[word + 2u];
+            uint next = ReadShapeCaptureHead(int(key & (shapeCornerLightingHaloFlag - 1u)),
+                                             (key & shapeCornerLightingHaloFlag) != 0u);
+            for (int scan = 0; scan < 1024 && next > 0u && next <= shapeRecordCapacity; scan++) {
+                shapeRecord item = shapeDataSSBO.records[next - 1u];
+                if (item.mapping.w == quadId && (item.shading.w & shapeFlagSecondary) == 0u) {
+                    if ((key & shapeCornerLightingCorner3Flag) != 0u) shapeAOSSBO.corners[next - 1u].z = lighting;
+                    else shapeAOSSBO.corners[next - 1u].y = lighting;
+                    break;
+                }
+                next = GetNextShapeRecord(item);
+            }
+        }
+    #endif
+
     void BuildReflectionShapeSurface(uint index, bool halo) {
         #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0
-            int voxelIndex = int(shapeDataSSBO.records[index].shading.w & shapeVoxelIndexMask);
+            int voxelIndex = int(GetShapeRecordCell(shapeDataSSBO.records[index].shading.w, shapeDataSSBO.records[index].mapping.x));
             int cellIndex = voxelIndex;
             #ifdef SHAPE_SCATTER
                 shapeRecord surface = shapeDataSSBO.records[index];
@@ -279,7 +328,10 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                             }
                         }
                         uint first = SkipToShapeSegmentBoundary(GetNextShapeRecord(surface), 1024);
-                        atomicCompSwap(shapeHeadSSBO.heads[cellIndex], GetShapeHeadStamp() | (index + 1u), GetShapeHeadStamp() | first);
+                        uint cellSlot = FindShapeCell(cellIndex, false);
+                        if (cellSlot != shapeCellCapacity)
+                            atomicCompSwap(shapeHeadSSBO.words[GetShapeCellHeadWord(cellSlot)],
+                                           GetShapeHeadStamp() | (index + 1u), GetShapeHeadStamp() | first);
                     }
                     return;
                 }
@@ -290,14 +342,9 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                         shapeDataSSBO.records[index].shading.w = (surface.shading.w & shapeFlagsMask) | compactNext | shapeFlagCompactLink;
                 }
                 if ((surface.shading.w & shapeFlagPlane) == 0u) return;
-                uint neighbors = (surface.mapping.x >> 25u) & 63u;
-                if (neighbors == 0u) return;
-                ivec3 owner = GetSceneVoxelPosition(surface.shading.w & shapeVoxelIndexMask);
+                ivec3 owner = GetSceneVoxelPosition(uint(voxelIndex));
                 ivec3 first, last;
-                if (neighbors != 63u) {
-                    first = -ivec3(neighbors & 1u, (neighbors >> 2u) & 1u, (neighbors >> 4u) & 1u);
-                    last = ivec3((neighbors >> 1u) & 1u, (neighbors >> 3u) & 1u, (neighbors >> 5u) & 1u);
-                } else {
+                {
                     vec3 anchor = GetShapeRecordAnchor(surface);
                     vec2 size = GetShapePlaneSize(surface);
                     vec2 cornerSign = GetShapePlaneCornerSign(surface.mapping.z);
@@ -305,18 +352,19 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                     vec3 edgeV = GetShapePlaneVector(int((surface.mapping.z >> 6u) & 63u)) * size.y * cornerSign.y;
                     GetShapePlaneCellRange(anchor, edgeU, edgeV, first, last);
                 }
+                if (all(equal(first, ivec3(0))) && all(equal(last, ivec3(0)))) return;
                 for (int z = first.z; z <= last.z; z++)
                     for (int y = first.y; y <= last.y; y++)
                         for (int x = first.x; x <= last.x; x++) {
                             ivec3 cell = owner + ivec3(x, y, z);
                             if (all(equal(cell, owner)) || any(lessThan(cell, ivec3(0)))
                                 || any(greaterThanEqual(cell, sceneVoxelVolumeSize)) || !IsReflectionCellSelected(cell)) continue;
-                            uint copyIndex = AllocateShapeRecord(false);
+                            uint copyIndex = AllocateNearShapeRecord(false, vec3(cell) + 0.5);
                             if (copyIndex >= shapeRecordCapacity) continue;
 
                             int targetCellIndex = GetSceneVoxelIndex(cell);
                             surface.mapping.x = (surface.mapping.x & ~shapeHeadPointerMask)
-                                              | PushShapeHead(targetCellIndex, copyIndex + 1u, false);
+                                              | PushShapeHead(InsertShapeCell(targetCellIndex, false), copyIndex + 1u);
                             shapeDataSSBO.records[copyIndex] = surface;
                             shapeAOSSBO.corners[copyIndex] = shapeAOSSBO.corners[index];
                             uint mat = imageLoad(wsr_img, GetSceneVoxelStoragePosition(cell)).r;
@@ -341,7 +389,14 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                     uint quadAO = 0xffffffffu;
                 #endif
                 uint foundCorners = 0u;
-                MergeShapeCornerAO(shapeAOSSBO.corners[index], quadAO, foundCorners);
+                #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                    uvec4 ownCorners = shapeAOSSBO.corners[index];
+                    MergeShapeCornerAO(ownCorners, quadAO, foundCorners);
+                    if (ownCorners.y != 0u) MergeShapeCornerAO(uvec4(ownCorners.y), quadAO, foundCorners);
+                    if (ownCorners.z != 0u) MergeShapeCornerAO(uvec4(ownCorners.z), quadAO, foundCorners);
+                #else
+                    MergeShapeCornerAO(shapeAOSSBO.corners[index], quadAO, foundCorners);
+                #endif
                 uint aoOnlyFlags = (surface.shading.w & ~shapeFaceMask) | shapeFaceMask | shapeFlagSecondary;
                 uint aoNext = ReadShapeCaptureHead(cellIndex, halo);
                 for (int scan = 0; scan < 1024 && aoNext > 0u && aoNext <= shapeRecordCapacity; scan++) {
@@ -362,10 +417,16 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                         nextFace = GetNextShapeRecord(other);
                         if (i == 255) nextFace = 0u;
                     }
+                    // nextFace = next record in this cell with the same face.
+                    // Its 24 bits don't fit in one field, so they are split over spare bits:
+                    //   bits 0-15 -> shading.y 0-15    bits 16-19 -> mapping.z 28-31
+                    //   bit 20    -> mapping.y 30      bits 21-23 -> mapping.x 24-26
+                    // With cuboids only: on planes, mapping.x 24-27 hold the plane size high bits.
                     surface.mapping.z |= ((nextFace >> 16u) & 15u) << 28u;
                     shapeDataSSBO.records[index].shading.y = (surface.shading.y & 0xffff0000u) | (nextFace & 65535u);
                     shapeDataSSBO.records[index].mapping.z = surface.mapping.z;
-                    shapeDataSSBO.records[index].mapping.y = surface.mapping.y | ((nextFace >> 20u) << 30u);
+                    shapeDataSSBO.records[index].mapping.y = surface.mapping.y | (((nextFace >> 20u) & 1u) << 30u);
+                    shapeDataSSBO.records[index].mapping.x = surface.mapping.x | ((nextFace >> 21u) << 24u);
                 }
                 uint next = 0u;
                 uint recordOffset = (index + shapeRecordCapacity - shapeDataSSBO.allocationStartIndex) % shapeRecordCapacity;
@@ -408,18 +469,9 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                         vec2 scale = abs(otherUV - uv) / (65536.0 * extent);
                         uvec2 size = uvec2(round(min(extent * 1024.0, vec2(plane ? 2047.0 : 1023.0))));
                         if (plane) {
-                            vec2 cornerSign = GetShapePlaneCornerSign(surface.mapping.z);
-                            vec3 edgeU = axisU * (float(size.x) / 1024.0) * cornerSign.x;
-                            vec3 edgeV = axisV * (float(size.y) / 1024.0) * cornerSign.y;
-                            ivec3 first, last;
-                            GetShapePlaneCellRange(anchor, edgeU, edgeV, first, last);
-                            uint neighbors = 63u;
-                            if (all(greaterThanEqual(first, ivec3(-1))) && all(lessThanEqual(last, ivec3(1))))
-                                neighbors = uint(first.x < 0) | (uint(last.x > 0) << 1u)
-                                          | (uint(first.y < 0) << 2u) | (uint(last.y > 0) << 3u)
-                                          | (uint(first.z < 0) << 4u) | (uint(last.z > 0) << 5u);
                             shapeDataSSBO.records[index].mapping.x = GetNextShapeRecord(surface)
-                                | ((size.x >> 9u) << 21u) | ((size.y >> 9u) << 23u) | (neighbors << 25u);
+                                | ((size.x >> 9u) << shapeRecordPointerBits) | ((size.y >> 9u) << (shapeRecordPointerBits + 2u))
+                                | (surface.mapping.x & shapeMappingCellHighMask);
                             uint codeU = uint(GetShapePlaneCode(axisU)), codeV = uint(GetShapePlaneCode(axisV));
                             shapeDataSSBO.records[index].mapping.z = (surface.mapping.z & 12288u)
                                 | codeU | (codeV << 6u)
@@ -453,7 +505,11 @@ bool UsesShapeSegmentBounds(uint surfaceMaterialWord) {
                             if (spans.z) occupied |= occupied << 4u;
                             bits |= occupied;
                         }
-                        if (!plane && ReflectionStorageAvailable()) atomicOr(blockDataSSBO.words[reflectionMetadataBase + GetShapeStateWordIndex(voxelIndex)], bits);
+                        if (!plane) {
+                            uint cellSlot = FindShapeCell(voxelIndex, false);
+                            if (cellSlot != shapeCellCapacity)
+                                atomicOr(shapeHeadSSBO.words[GetShapeCellStateWord(cellSlot)], bits << GetShapeCellStateShift(cellSlot));
+                        }
                         return;
                     }
                     next = GetNextShapeRecord(other);

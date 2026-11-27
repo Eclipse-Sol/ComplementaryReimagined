@@ -87,6 +87,23 @@ faceData UnpackReflectionFaceData(uvec3 data, out uint orientation) {
 uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal, out uint faceIndex) {
     faceIndex = 0xffffffffu;
     if (!ReflectionStorageAvailable()) return uvec3(0u);
+    #ifdef WSR_FACE_LIST
+        #if defined SHADOW && defined VERTEX_SHADER
+            uint head = atomicAdd(blockDataSSBO.words[cell.storageIndex], 0u);
+        #else
+            uint head = blockDataSSBO.words[cell.storageIndex];
+        #endif
+        if (cell.regionGeneration == 0u) return uvec3(0u);
+        uint recordGeneration = cell.regionGeneration;
+        #if defined SHADOW && defined VERTEX_SHADER
+            if ((head & reflectionFaceStampMask) != GetReflectionFaceStamp(recordGeneration))
+                recordGeneration = shapeDataSSBO.previousRegionGeneration;
+            memoryBarrier();
+        #endif
+        uvec4 record;
+        faceIndex = FindReflectionFaceRecord(head, uint(GetReflectionFaceIndex(normal)), recordGeneration, record);
+        return record.xyz;
+    #else
     int face = 6 * cell.storageIndex + GetReflectionFaceIndex(normal);
     #if defined SHADOW && defined VERTEX_SHADER
         uint reference = atomicAdd(blockDataSSBO.words[face], 0u);
@@ -103,14 +120,14 @@ uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal, out uint faceIn
     if (regionGeneration == 0u) return uvec3(0u);
     uint stamp = reference & reflectionFaceStampMask;
     uint recordGeneration = regionGeneration;
-    if (stamp != ((regionGeneration << 22u) & reflectionFaceStampMask)) {
+    if (stamp != GetReflectionFaceStamp(regionGeneration)) {
         #if defined SHADOW && defined VERTEX_SHADER
             #if WORLD_SPACE_SHAPES > 0
                 recordGeneration = shapeDataSSBO.previousRegionGeneration;
             #else
             recordGeneration = regionGeneration - 1u;
             #endif
-            if (stamp != ((recordGeneration << 22u) & reflectionFaceStampMask)) return uvec3(0u);
+            if (stamp != GetReflectionFaceStamp(recordGeneration)) return uvec3(0u);
         #else
             return uvec3(0u);
         #endif
@@ -127,6 +144,7 @@ uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal, out uint faceIn
     if (record.w != recordGeneration) return uvec3(0u);
     faceIndex = index;
     return record.xyz;
+    #endif
 }
 
 uvec3 ReadReflectionFace(reflectionCellHandle cell, vec3 normal) {
@@ -154,10 +172,6 @@ faceData GetFaceData(ivec3 cell, vec3 normal) {
     return GetFaceData(GetReflectionCellHandle(cell), normal);
 }
 
-int GetShapeStateWordIndex(int voxelIndex) {
-    return lavaCornerCount + voxelIndex;
-}
-
 faceData GetLavaFaceData(reflectionCellHandle cellRef, out mat2 textureRotation, out uint faceIndex) {
     uvec3 data = ReadReflectionFace(cellRef, vec3(0.0, 1.0, 0.0), faceIndex);
     uint origin = data.x;
@@ -170,40 +184,74 @@ faceData GetLavaFaceData(reflectionCellHandle cellRef, out mat2 textureRotation,
                     vec3(origin >> 16u, origin & 65535u, bits & 65535u) / 65536.0);
 }
 
-int GetLavaCornerIndex(ivec3 corner) {
-    return corner.x + (sceneVoxelVolumeSize.x + 1) * (corner.y + sceneVoxelVolumeSize.y * corner.z);
-}
+const uint lavaFrameStampMask = 0xfffff000u;
 
 uint GetLavaFrameStamp() {
     return (GetReflectionFrame() % 0xfffffu + 1u) << 12u;
 }
 
-uvec4 GetLavaCornerWords(ivec3 cell) {
-    return uvec4(
-        blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(cell)],
-        blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(cell + ivec3(1, 0, 0))],
-        blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(cell + ivec3(0, 0, 1))],
-        blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(cell + ivec3(1, 0, 1))]
-    );
-}
-
 #if WORLD_SPACE_SHAPES > 0
-vec4 GetCapturedLavaCornerHeights(ivec3 cell) {
-    reflectionCellHandle cellRef = GetReflectionCellHandle(cell);
-    uint faceIndex;
-    ReadReflectionFace(cellRef, vec3(0.0, 1.0, 0.0), faceIndex);
-    if (faceIndex == 0xffffffffu) return vec4(1.0);
-    uvec4 data = LoadReflectionFaceAux(faceIndex);
-    if (data.w != cellRef.regionGeneration || (data.z & 0xc0000000u) != 0xc0000000u) return vec4(-1.0);
-    return vec4(data.x & 4095u, data.x >> 12u, data.y & 4095u, data.y >> 12u) / 4095.0;
-}
-#endif
+    const uint lavaCornerTagShift = 28u;
+    const uint lavaCornerTagMask = 0xfu << lavaCornerTagShift;
+    const uint lavaCornerMaxProbes = 1024u;
 
-float GetLavaCornerHeight(ivec3 corner) {
-    if (!ReflectionStorageAvailable()) return 1.0;
-    uint data = blockDataSSBO.words[reflectionMetadataBase + GetLavaCornerIndex(corner)];
-    return (data & 0xfffff000u) == GetLavaFrameStamp() ? float(data & 4095u) / 4095.0 : 1.0;
-}
+    uint GetLavaCornerTag() {
+        return (GetReflectionFrame() % 15u + 1u) << lavaCornerTagShift;
+    }
+
+    uint GetLavaCornerKey(ivec3 corner) {
+        return uint(corner.x) | (uint(corner.z) << 10u) | (uint(corner.y) << 20u);
+    }
+
+    // Fibonacci hashing!!
+    uint GetLavaCornerHomeSlot(uint key) {
+        return (key * 2654435761u) >> (32u - lavaCornerHashBits);
+    }
+
+    uint GetLavaCornerWord(ivec3 corner) {
+        uint key = GetLavaCornerKey(corner), tag = GetLavaCornerTag();
+        uint slot = GetLavaCornerHomeSlot(key);
+        key |= tag;
+        for (uint probe = 0u; probe < lavaCornerMaxProbes; probe++) {
+            int word = reflectionLavaBase + 2 * int(slot);
+            uint current = blockDataSSBO.words[word];
+            if ((current & lavaCornerTagMask) != tag) return 0u;
+            if (current == key) {
+                uint value = blockDataSSBO.words[word + 1];
+                return (value & lavaFrameStampMask) == GetLavaFrameStamp() ? value : 0u;
+            }
+            slot = (slot + 1u) & (lavaCornerHashCapacity - 1u);
+        }
+        return 0u;
+    }
+
+    uvec4 GetLavaCornerWords(ivec3 cell) {
+        return uvec4(GetLavaCornerWord(cell), GetLavaCornerWord(cell + ivec3(1, 0, 0)),
+                     GetLavaCornerWord(cell + ivec3(0, 0, 1)), GetLavaCornerWord(cell + ivec3(1, 0, 1)));
+    }
+
+    vec4 GetCapturedLavaCornerHeights(ivec3 cell) {
+        reflectionCellHandle cellRef = GetReflectionCellHandle(cell);
+        uint faceIndex;
+        ReadReflectionFace(cellRef, vec3(0.0, 1.0, 0.0), faceIndex);
+        if (faceIndex == 0xffffffffu) return vec4(1.0);
+        uvec4 data = LoadReflectionFaceAux(faceIndex);
+        if (data.w != (cellRef.regionGeneration | reflectionFaceAuxFlag)
+            || (data.z & reflectionFaceAuxFlagsMask) != reflectionFaceAuxFlagsMask)
+            return vec4(-1.0);
+        return vec4(data.x & 4095u, data.x >> 12u, data.y & 4095u, data.y >> 12u) / 4095.0;
+    }
+#else
+    int GetLavaCornerIndex(ivec3 corner) {
+        return corner.x + (sceneVoxelVolumeSize.x + 1) * (corner.y + sceneVoxelVolumeSize.y * corner.z);
+    }
+
+    float GetLavaCornerHeight(ivec3 corner) {
+        if (!ReflectionStorageAvailable()) return 1.0;
+        uint data = blockDataSSBO.words[reflectionLavaBase + GetLavaCornerIndex(corner)];
+        return (data & lavaFrameStampMask) == GetLavaFrameStamp() ? float(data & 4095u) / 4095.0 : 1.0;
+    }
+#endif
 
 float GetReflectionLightBlend() {
     #if WORLD_SPACE_SHAPES > 0
@@ -217,20 +265,42 @@ float GetReflectionLightBlend() {
 void MergeStampedWord(int index, uint payload, uint stamp, bool keepMax) {
     if (!ReflectionStorageAvailable()) return;
     uint newData = stamp | payload;
-    uint oldData = atomicAdd(blockDataSSBO.words[reflectionMetadataBase + index], 0u);
+    uint oldData = atomicAdd(blockDataSSBO.words[reflectionLavaBase + index], 0u);
     while (true) {
         uint updated = newData;
-        if ((oldData & 0xfffff000u) == stamp) updated = keepMax ? max(oldData, newData) : oldData | newData;
+        if ((oldData & lavaFrameStampMask) == stamp) updated = keepMax ? max(oldData, newData) : oldData | newData;
         if (updated == oldData) break;
-        uint previous = atomicCompSwap(blockDataSSBO.words[reflectionMetadataBase + index], oldData, updated);
+        uint previous = atomicCompSwap(blockDataSSBO.words[reflectionLavaBase + index], oldData, updated);
         if (previous == oldData) break;
         oldData = previous;
     }
 }
 
+#if WORLD_SPACE_SHAPES > 0
+void StoreLavaCorner(ivec3 corner, float height) {
+    if (!ReflectionStorageAvailable()) return;
+    uint key = GetLavaCornerKey(corner), tag = GetLavaCornerTag();
+    uint slot = GetLavaCornerHomeSlot(key);
+    key |= tag;
+    for (uint probe = 0u; probe < lavaCornerMaxProbes; probe++) {
+        int word = reflectionLavaBase + 2 * int(slot);
+        uint current = atomicAdd(blockDataSSBO.words[word], 0u);
+        if ((current & lavaCornerTagMask) != tag) {
+            uint previous = atomicCompSwap(blockDataSSBO.words[word], current, key);
+            current = previous == current ? key : previous;
+        }
+        if (current == key) {
+            MergeStampedWord(2 * int(slot) + 1, uint(round(height * 4095.0)), GetLavaFrameStamp(), true);
+            return;
+        }
+        slot = (slot + 1u) & (lavaCornerHashCapacity - 1u);
+    }
+}
+#else
 void StoreLavaCorner(ivec3 corner, float height) {
     MergeStampedWord(GetLavaCornerIndex(corner), uint(round(height * 4095.0)), GetLavaFrameStamp(), true);
 }
+#endif
 
 #ifdef MC_GL_ARB_shader_draw_parameters
     #extension GL_ARB_shader_draw_parameters : enable
@@ -259,19 +329,20 @@ uint GetCapturedReflectionCornerLighting(vec3 normal) {
 }
 #endif
 
-uint CaptureReflectionFace(uvec3 data, vec3 normal) {
+uint CaptureReflectionFace(uvec3 data, vec3 normal, bool withAux) {
     if (!ReflectionStorageAvailable()) return 0u;
-    uint slot = atomicAdd(blockDataSSBO.faceAllocationAttempts, 1u);
+    uint size = withAux ? 2u : 1u;
+    uint slot = atomicAdd(blockDataSSBO.faceAllocationAttempts, size);
     #if WORLD_SPACE_SHAPES > 0
         uint capacity = 2u * reflectionFaceCapacity;
-        if (slot >= blockDataSSBO.allocationCapacity) {
+        if (slot + size > blockDataSSBO.allocationCapacity) {
             return 0u;
         }
         uint generation = shapeDataSSBO.captureFrame;
         uint index = GetReflectionRingIndex(blockDataSSBO.allocationStartIndex, slot, capacity);
         slot = index;
     #else
-    if (slot >= reflectionFaceCapacity) {
+    if (slot + size > reflectionFaceCapacity) {
         return 0u;
     }
     uint generation = blockDataSSBO.faceGeneration;
@@ -281,12 +352,16 @@ uint CaptureReflectionFace(uvec3 data, vec3 normal) {
     blockDataSSBO.words[word] = data.x;
     blockDataSSBO.words[word + 1u] = data.y;
     blockDataSSBO.words[word + 2u] = data.z;
-    blockDataSSBO.words[word + 3u] = generation;
-    #if WORLD_SPACE_SHAPES > 0
-        uint auxWord = uint(reflectionFaceAuxBase) + 4u * index;
-        blockDataSSBO.words[auxWord + 2u] = 0u;
-        blockDataSSBO.words[auxWord + 3u] = 0u;
+    #ifndef WSR_FACE_LIST
+        blockDataSSBO.words[word + 3u] = generation;
     #endif
+    if (withAux) {
+        uint auxWord = uint(reflectionFaceRecordBase) + 4u * GetReflectionFaceAuxIndex(index);
+        blockDataSSBO.words[auxWord] = 0u;
+        blockDataSSBO.words[auxWord + 1u] = 0u;
+        blockDataSSBO.words[auxWord + 2u] = 0u;
+        blockDataSSBO.words[auxWord + 3u] = generation | reflectionFaceAuxFlag;
+    }
     #if WORLD_SPACE_SMOOTH_LIGHTING > 0
         uint lightingWord = uint(reflectionFaceCornersBase) + 4u * index;
         uint firstCorner = GetCapturedReflectionCornerLighting(normal);
@@ -295,12 +370,28 @@ uint CaptureReflectionFace(uvec3 data, vec3 normal) {
             blockDataSSBO.words[lightingWord + corner] = corner == firstIndex ? firstCorner : 0u;
     #endif
     memoryBarrier();
-    return ((generation << 22u) & reflectionFaceStampMask) | (slot + 1u);
+    return GetReflectionFaceStamp(generation) | (slot + 1u);
+}
+
+#ifdef WSR_FACE_LIST
+void PublishReflectionFaces(ivec3 voxelPos, uint faceMask, uint reference) {
+    if (reference == 0u) return;
+    uint linkWord = uint(reflectionFaceRecordBase) + 4u * ((reference & reflectionFacePointerMask) - 1u) + 3u;
+    blockDataSSBO.words[linkWord] = faceMask << reflectionFaceMaskShift;
+    memoryBarrier();
+    uint previous = atomicExchange(blockDataSSBO.words[GetSceneVoxelIndex(voxelPos)], reference);
+    if ((previous & reflectionFaceStampMask) == (reference & reflectionFaceStampMask))
+        atomicOr(blockDataSSBO.words[linkWord], previous & reflectionFacePointerMask);
 }
 
 void PublishReflectionFace(ivec3 voxelPos, vec3 normal, uint reference) {
+    PublishReflectionFaces(voxelPos, 1u << uint(GetReflectionFaceIndex(normal)), reference);
+}
+#else
+void PublishReflectionFace(ivec3 voxelPos, vec3 normal, uint reference) {
     if (reference != 0u) atomicExchange(blockDataSSBO.words[GetFaceRecordSlot(voxelPos, normal)], reference);
 }
+#endif
 
 void StoreLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float textureRotation) {
     uvec3 uv = PackReflectionTextureBounds(vec3(origin, textureRad));
@@ -308,14 +399,13 @@ void StoreLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float text
     uint angle = uint(round(fract(textureRotation / 6.28318530718) * 256.0)) & 255u;
     uvec3 data = uvec3((uv.x << 16u) | uv.y,
                      uv.z | (angle << 16u) | (lightmap.x << 24u) | (lightmap.y << 28u), 0u);
-    uint reference = CaptureReflectionFace(data, vec3(0.0, 1.0, 0.0));
+    uint reference = CaptureReflectionFace(data, vec3(0.0, 1.0, 0.0), WORLD_SPACE_SHAPES > 0);
     #if WORLD_SPACE_SHAPES > 0
         if (reference != 0u) {
             uint index = (reference & reflectionFacePointerMask) - 1u;
-            uint auxWord = uint(reflectionFaceAuxBase) + 4u * index;
+            uint auxWord = uint(reflectionFaceRecordBase) + 4u * GetReflectionFaceAuxIndex(index);
             // shadowcomp freezes the four corner heights after all vertices have been captured.
-            blockDataSSBO.words[auxWord + 2u] = 0x80000000u | uint(GetSceneVoxelIndex(voxelPos));
-            blockDataSSBO.words[auxWord + 3u] = shapeDataSSBO.captureFrame;
+            blockDataSSBO.words[auxWord + 2u] = reflectionFaceAuxLavaFlag | uint(GetSceneVoxelIndex(voxelPos));
             memoryBarrier();
         }
     #endif
@@ -323,14 +413,14 @@ void StoreLavaFaceData(ivec3 voxelPos, vec2 origin, float textureRad, float text
 }
 
 void StoreReflectionFace(ivec3 voxelPos, vec3 normal, uvec3 data) {
-    PublishReflectionFace(voxelPos, normal, CaptureReflectionFace(data, normal));
+    PublishReflectionFace(voxelPos, normal, CaptureReflectionFace(data, normal, false));
 }
 
 void StoreGrassSideOverlay(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, uint orientation) {
     uint index = atomicAdd(blockDataSSBO.grassCaptureCount, 1u);
     if (index >= grassCaptureCapacity) return;
     uvec3 uv = PackReflectionTextureBounds(vec3(origin, textureRad));
-    uint key = uint(GetSceneVoxelIndex(voxelPos)) | (uint(GetReflectionFaceIndex(normal)) << 24u);
+    uint key = uint(GetSceneVoxelIndex(voxelPos)) | (uint(GetReflectionFaceIndex(normal)) << sceneVoxelIndexBits);
     uint word = uint(reflectionGrassCaptureBase) + 4u * index;
     blockDataSSBO.words[word] = (uv.x << 16u) | uv.y;
     blockDataSSBO.words[word + 1u] = uv.z | (orientation << 16u);
@@ -357,15 +447,7 @@ void StoreFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, u
     }
 
     uvec3 newData = PackReflectionFaceData(faceData(glColor.rgb, lmCoordM, vec3(origin, textureRad)), orientation);
-    uint reference = CaptureReflectionFace(newData, normal);
-    if (grassSide && reference != 0u) {
-        uint index = (reference & reflectionFacePointerMask) - 1u;
-        #if WORLD_SPACE_SHAPES <= 0
-            index += (blockDataSSBO.faceGeneration & 1u) * reflectionFaceCapacity;
-        #endif
-        blockDataSSBO.words[uint(reflectionFaceAuxBase) + 4u * index + 3u] = 0u;
-        memoryBarrier();
-    }
+    uint reference = CaptureReflectionFace(newData, normal, grassSide);
 
     if (storeToAllFaces || storeToAllFacesExceptTop) {
         vec3 faceOffsets[6] = vec3[6](
@@ -378,9 +460,14 @@ void StoreFaceData(ivec3 voxelPos, vec3 normal, vec2 origin, float textureRad, u
         );
 
         int start = 0 + int(storeToAllFacesExceptTop);
+        #ifdef WSR_FACE_LIST
+            PublishReflectionFaces(voxelPos, storeToAllFacesExceptTop ? reflectionAllFacesMask & ~(1u << reflectionTopFace)
+                                                                      : reflectionAllFacesMask, reference);
+        #else
         for(int i = start; i < 6; i++) {
             PublishReflectionFace(voxelPos, faceOffsets[i], reference);
         }
+        #endif
     } else {
         PublishReflectionFace(voxelPos, normal, reference);
     }

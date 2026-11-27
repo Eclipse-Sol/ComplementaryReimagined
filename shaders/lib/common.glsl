@@ -31,6 +31,7 @@
     #define COLORED_LIGHTING 0 //[128 192 256 384 512 768 1024]
     #define WORLD_SPACE_REFLECTIONS -1 //[-1 1]
     #define WORLD_SPACE_SHAPES 1 //[-1 1]
+    #define WSR_VOLUME_HEIGHT 64 //[64 128 256]
     #define WORLD_SPACE_SMOOTH_LIGHTING 1 //[-1 1]
     #define WORLD_SPACE_LIGHTING_ATLAS -1 //[-1 1]
     #define WSR_LIGHTING_RES 16 //[8 16]

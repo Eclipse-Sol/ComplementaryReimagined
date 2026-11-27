@@ -4,6 +4,7 @@
 #define SSBO_QUALIFIER
 #include "/lib/voxelization/SSBOs/blockDataBuffer.glsl"
 #include "/lib/voxelization/SSBOs/shapeDataBuffer.glsl"
+#include "/lib/voxelization/SSBOs/shapeHeadBuffer.glsl"
 
 layout(local_size_x = 1) in;
 const ivec3 workGroups = ivec3(1, 1, 1);
@@ -21,6 +22,22 @@ void main() {
             blockDataSSBO.regionStartIndices[i] = 0u;
         }
     }
+    uint logEnd = shapeHeadSSBO.shapeClaimLogEnd;
+    if (firstCapture) {
+        for (int i = 0; i < WSR_MAX_REGIONS; i++) {
+            shapeHeadSSBO.regionLogStart[i] = logEnd;
+            shapeHeadSSBO.regionLogEnd[i] = logEnd;
+        }
+        shapeHeadSSBO.previousHaloLogCount = 0u;
+    } else {
+        shapeHeadSSBO.regionLogStart[shapeDataSSBO.selectedRegion] = shapeHeadSSBO.captureLogStart;
+        shapeHeadSSBO.regionLogEnd[shapeDataSSBO.selectedRegion] = logEnd;
+        shapeHeadSSBO.previousHaloLogCount = shapeHeadSSBO.shapeHaloClaimLogCount;
+    }
+    shapeHeadSSBO.captureLogStart = logEnd;
+    shapeHeadSSBO.shapeHaloClaimLogCount = 0u;
+    shapeHeadSSBO.shapeCornerLightingCount = 0u;
+
     uint regionCount = uint(reflectionActiveRegionCount);
     uint selectedRegion = captureFrame % regionCount;
     uint oldestRetainedRegion = (selectedRegion + 1u) % regionCount;
@@ -79,14 +96,14 @@ void main() {
         }
     }
     barrier();
-    uint chunk = (uint(reflectionFaceCount) + 1023u) / 1024u;
+    uint chunk = (uint(reflectionFaceRefCount) + 1023u) / 1024u;
     uint group = gl_WorkGroupID.x + gl_NumWorkGroups.x * (gl_WorkGroupID.y + gl_NumWorkGroups.y * gl_WorkGroupID.z);
     uint stride = gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z * gl_WorkGroupSize.x;
     for (uint step = 0u; step < 2u; step++) {
         uint chunkStart = ((sweepGeneration + step) & 1023u) * chunk;
         for (uint i = group * gl_WorkGroupSize.x + gl_LocalInvocationID.x; i < chunk; i += stride) {
             uint index = chunkStart + i;
-            if (index < uint(reflectionFaceCount)) blockDataSSBO.words[index] = 0u;
+            if (index < uint(reflectionFaceRefCount)) blockDataSSBO.words[index] = 0u;
         }
     }
 }

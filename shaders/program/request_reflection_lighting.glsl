@@ -44,7 +44,7 @@ void main() {
     uint material = GetReflectionHitMaterial(hit);
     uint face = GetReflectionHitFace(hit);
     if (material == 0u || face >= 6u || GetReflectionShapeFamily(int(material)) != WSR_FAMILY_NONE) return;
-    uint cellIndex = hit.x & 0xffffffu;
+    uint cellIndex = GetReflectionHitCell(hit);
     ivec3 cell = GetSceneVoxelPosition(cellIndex, PositiveModulo(GetReflectionVolumeOrigin(), sceneVoxelVolumeSize));
     if (!IsReflectionCellSelected(cell)) return;
     uint generation = GetReflectionCellGeneration(cell, GetPackedRegionTileOffset());

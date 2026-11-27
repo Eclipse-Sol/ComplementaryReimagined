@@ -306,7 +306,8 @@ vec4 GetShadedReflection(ivec3 voxelPos, vec3 oldPlayerPos, vec3 playerPos, vec3
         vec2 grassSideMaterial = vec2(-1.0, 0.0);
         if (faceIndex != 0xffffffffu && IsReflectionGrassSide(int(mat), normal)) {
             uvec4 overlay = LoadReflectionGrassOverlay(faceIndex);
-            if (overlay.w == cellRef.regionGeneration)
+            if (overlay.w == (cellRef.regionGeneration | reflectionFaceAuxFlag)
+                && (overlay.z & reflectionFaceAuxFlagsMask) == reflectionFaceAuxResolvedFlag)
                 grassSideMaterial = ApplyGrassSideOverlay(color, overlay.xyz, localTexCoord, faceData.textureBounds.z,
                                                          faceOrientation, normal, textureGradX, textureGradY, textureSizeAtlas, dither);
         }
@@ -495,8 +496,8 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
             traceLength = 999999.0;
             return vec4(0.0);
         }
-        ivec3 cell = GetSceneVoxelPosition(record.ids.x & shapeVoxelIndexMask, storageOrigin);
-        reflectionCellHandle cellRef = reflectionCellHandle(int(record.ids.x & shapeVoxelIndexMask),
+        ivec3 cell = GetSceneVoxelPosition(GetReflectionHitCell(record.ids), storageOrigin);
+        reflectionCellHandle cellRef = reflectionCellHandle(int(GetReflectionHitCell(record.ids)),
                                                             GetReflectionCellGeneration(cell, packedRegionOrigin));
         uint faceIndex = GetReflectionHitFace(record.ids);
         vec3 normal = faceIndex == 6u ? vec3(0.0) : GetShapeFaceNormal(int(faceIndex));
@@ -514,8 +515,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
             }
             surfaceNormal = normal;
         } else if (lava && normal.y > 0.5) {
-            uint gx = (record.ids.y & 0x7fffffffu) | (((record.ids.x >> 27u) & 1u) << 31u);
-            vec2 gradient = vec2(uintBitsToFloat(gx), uintBitsToFloat(record.ids.w));
+            vec2 gradient = GetReflectionHitLavaGradient(record.ids);
             surfaceNormal = normalize(vec3(-gradient.x, 1.0, -gradient.y));
         }
         float positionDistance = traceLength
@@ -646,12 +646,15 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
 
             #if WORLD_SPACE_SHAPES > 0
                 int family = GetReflectionShapeFamily(int(mat));
+                uint shapeHead = 0u, shapeState = 0u;
+                if (hasSurfaces || family != WSR_FAMILY_NONE && family != WSR_FAMILY_CAPTURED && mat != 0u)
+                    ReadShapeCell(cellRef, shapeHead, shapeState);
                 if (family == WSR_FAMILY_CAPTURED || mat == 0u) hit = false;
                 else if (family != WSR_FAMILY_NONE) {
                     vec3 local = voxelPos + cellEntryDist * rayDir - vec3(cell);
                     int model = family >= WSR_FAMILY_FIRST_MODEL ? GetReflectionShapeModel(int(mat)) : 0;
                     float shapeDist = IntersectReflectionShapeBoxes(
-                        local, rayDir, family, model, GetShapeState(cellRef), max(0.0, cellExitDist - cellEntryDist), normal
+                        local, rayDir, family, model, shapeState, max(0.0, cellExitDist - cellEntryDist), normal
                     );
                     hit = shapeDist >= 0.0;
                     if (hit) {
@@ -659,7 +662,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                         intersection = playerPos + traceLength * rayDir;
                         surfaceNormal = normal;
                         vec3 surfaceLocal = PlayerToSceneVoxel(intersection) - vec3(cell);
-                        surfaceIndex = SelectShapeRecord(surfaceLocal, normal, cellRef, shapeRecordCapacity);
+                        surfaceIndex = SelectShapeRecord(surfaceLocal, normal, shapeHead, shapeRecordCapacity);
                         hit = surfaceIndex < shapeRecordCapacity;
                     }
                 }
@@ -688,7 +691,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                                                  surfaceIndex, cellRef, storageOrigin);
                 #if WORLD_SPACE_SHAPES > 0
                     if (reflection.a > -0.5 || family == WSR_FAMILY_NONE) break;
-                    surfaceIndex = SelectShapeRecord(PlayerToSceneVoxel(intersection) - vec3(cell), normal, cellRef, surfaceIndex);
+                    surfaceIndex = SelectShapeRecord(PlayerToSceneVoxel(intersection) - vec3(cell), normal, shapeHead, surfaceIndex);
                     hit = surfaceIndex < shapeRecordCapacity;
                 #else
                     break;
@@ -708,7 +711,7 @@ vec4 VoxelRayTrace(vec3 playerPos, vec3 voxelPos, vec3 rayDir, vec3 rayGradX, ve
                         vec3 surfaceCurvatureX = curvatureGradX, surfaceCurvatureY = curvatureGradY;
                     #endif
                     float distance = IntersectReflectionCapturedSurfaces(
-                        cell, cellRef, storageOrigin, voxelPos + cellEntryDist * rayDir, rayDir, max(0.0, limit - cellEntryDist), textureAtlas,
+                        cell, shapeHead, storageOrigin, voxelPos + cellEntryDist * rayDir, rayDir, max(0.0, limit - cellEntryDist), textureAtlas,
                         virtualEntry * surfaceRayX + cellEntryDist * surfaceCurvatureX,
                         virtualEntry * surfaceRayY + cellEntryDist * surfaceCurvatureY,
                         surfaceRayX + surfaceCurvatureX, surfaceRayY + surfaceCurvatureY, planeNormal, planeIndex, planeMaterial

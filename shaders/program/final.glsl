@@ -168,8 +168,13 @@ void main() {
         if (ReflectionStorageAvailable()) {
             int cornerPixel = int(gl_FragCoord.x) + int(gl_FragCoord.y) * int(viewWidth);
             if (cornerPixel < 64) {
-                int cornerIndex = (frameCounter * 64 + cornerPixel) % lavaCornerCount;
-                blockDataSSBO.words[reflectionMetadataBase + cornerIndex] = 0u;
+                #if WORLD_SPACE_SHAPES > 0
+                    int cornerIndex = 2 * ((frameCounter * 64 + cornerPixel) % int(lavaCornerHashCapacity));
+                    blockDataSSBO.words[reflectionLavaBase + cornerIndex + 1] = 0u;
+                #else
+                    int cornerIndex = (frameCounter * 64 + cornerPixel) % lavaCornerCount;
+                #endif
+                blockDataSSBO.words[reflectionLavaBase + cornerIndex] = 0u;
             }
         }
     #endif
