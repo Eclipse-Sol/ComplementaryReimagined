@@ -257,8 +257,12 @@ flat out vec4 glColor;
     #extension GL_ARB_shader_image_load_store : enable
 #endif
 
-#if COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0 && !defined SHADOW_WATER_PROGRAM && !defined SHADOW_ENTITIES_PROGRAM && !defined SHADOW_COLORWHEEL
-    #define WSR_TERRAIN_CAPTURE
+#if COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_REFLECTIONS_INTERNAL > 0
+    #if defined SHADOW_TERRAIN_PROGRAM
+        #define WSR_TERRAIN_CAPTURE
+    #elif !defined SHADOW_WATER_PROGRAM && !defined SHADOW_ENTITIES_PROGRAM && !defined SHADOW_COLORWHEEL && WORLD_SPACE_PLAYER_REF == 1 && !defined WSR_PLAYER_EQUIPMENT
+        #define WSR_PLAYER_CAPTURE
+    #endif
 #endif
 
 //Attributes//
@@ -316,7 +320,7 @@ vec2 lmCoord;
     #endif
 #endif
 
-#if defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT
+#if defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT || defined WSR_PLAYER_CAPTURE
     #define SSBO_QUALIFIER
     #include "/lib/voxelization/SSBOs/playerVerticesBuffer.glsl"
     #include "/lib/voxelization/playerVoxelization.glsl"
@@ -390,13 +394,11 @@ void main() {
         #endif
 
         if (gl_VertexID % 4 == 0) {
-            if (solidTerrain) {
-                UpdateVoxelMap(mat);
-            } else if (renderStage == MC_RENDER_STAGE_TERRAIN_TRANSLUCENT) {
+            if (solidTerrain || renderStage == MC_RENDER_STAGE_TERRAIN_TRANSLUCENT) {
                 UpdateVoxelMap(mat);
 
                 #ifdef PUDDLE_VOXELIZATION
-                    UpdatePuddleVoxelMap(mat);
+                    if (!solidTerrain) UpdatePuddleVoxelMap(mat);
                 #endif
             }
 
@@ -451,7 +453,7 @@ void main() {
             }
         #endif
 
-        #if (defined WSR_TERRAIN_CAPTURE || defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT) && WORLD_SPACE_PLAYER_REF == 1
+        #if defined WSR_PLAYER_CAPTURE || defined SHADOW_ENTITIES_PROGRAM && defined WSR_PLAYER_EQUIPMENT
             UpdatePlayerVertexList(position.xyz);
         #endif
     #endif

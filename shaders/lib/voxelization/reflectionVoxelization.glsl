@@ -169,7 +169,4 @@ bool CheckInsideLodVoxelVolume(vec3 voxelPos) {
         }
     }
 
-    #if WORLD_SPACE_PLAYER_REF == 1
-        #include "/lib/voxelization/playerVoxelization.glsl"
-    #endif
 #endif

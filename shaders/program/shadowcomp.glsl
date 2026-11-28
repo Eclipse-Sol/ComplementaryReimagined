@@ -19,6 +19,7 @@ layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 //Includes//
 #include "/lib/voxelization/lightVoxelization.glsl"
+#include "/lib/colors/specialBlocklightColors.glsl"
 #include "/lib/voxelization/actState.glsl"
 
 //Common Variables//

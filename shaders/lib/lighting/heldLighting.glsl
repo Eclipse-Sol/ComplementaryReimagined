@@ -1,3 +1,7 @@
+#if COLORED_LIGHTING_INTERNAL > 0
+    #include "/lib/colors/specialBlocklightColors.glsl"
+#endif
+
 vec3 GetHeldLighting(vec3 playerPos, vec3 color, float emission) {
     float heldLight = heldBlockLightValue; float heldLight2 = heldBlockLightValue2;
 
@@ -11,8 +15,15 @@ vec3 GetHeldLighting(vec3 playerPos, vec3 color, float emission) {
 
         vec3 heldLightCol = blocklightCol; vec3 heldLightCol2 = blocklightCol;
     #else
-        vec4 specialHeldLightCol = GetSpecialBlocklightColor(heldItemId - 44000);
-        vec4 specialHeldLightCol2 = GetSpecialBlocklightColor(heldItemId2 - 44000);
+        // This keeps the compiler from unrolling...
+        vec4 specialHeldLightCol = vec4(0.0), specialHeldLightCol2 = vec4(0.0);
+        int heldLookups = heldItemId2 == heldItemId ? 1 : 2;
+        for (int hand = 0; hand < heldLookups; hand++) {
+            vec4 handColor = GetSpecialBlocklightColor((hand == 0 ? heldItemId : heldItemId2) - 44000);
+            if (hand == 0) specialHeldLightCol = handColor;
+            else specialHeldLightCol2 = handColor;
+        }
+        if (heldLookups == 1) specialHeldLightCol2 = specialHeldLightCol;
 
         vec3 heldLightCol = specialHeldLightCol.rgb;
         vec3 heldLightCol2 = specialHeldLightCol2.rgb;

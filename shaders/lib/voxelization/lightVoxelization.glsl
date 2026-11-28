@@ -261,9 +261,10 @@
     8392 - 32767                                      unused
     Bit 15 (32768)                                    Colorwheel geometry flag, the ID is stored in the lower 15 bits
     */
+    #if defined SHADOW && defined VERTEX_SHADER
     int GetVoxelIDs(int mat) {
         /* These return IDs must be consistent across the following files:
-        "lightVoxelization.glsl", "blocklightColors.glsl", "item.properties"
+        "lightVoxelization.glsl", "specialBlocklightColors.glsl", "item.properties"
         The order of if-checks or block IDs don't matter. The returning IDs matter. */
 
         #define ALWAYS_DO_IPBR_LIGHTS
@@ -534,6 +535,7 @@
 
         return 1; // Standard Block
     }
+    #endif
 
     #if defined SHADOW && defined VERTEX_SHADER && defined ACT_BRICK_SKIP
         // Light sources mark their brick so the floodfill never skips a brick that holds one

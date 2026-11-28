@@ -85,41 +85,17 @@ bool rayTracePlayer(vec3 playerPos, vec3 rayDir, float wsrTraceLength, out vec3 
     #endif
 
 
-    // Head
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.headMin, playerVerticesSSBO.headMax)) {
-        for (int i = 0; i < 12; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
-    }
-    // Right Hand
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.rightHandMin, playerVerticesSSBO.rightHandMax)) {
-        for (int i = 12; i < 24; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
-    }
-    // Left Leg
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.leftLegMin, playerVerticesSSBO.leftLegMax)) {
-        for (int i = 24; i < 36; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
-    }
-    // Left Hand
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.leftHandMin, playerVerticesSSBO.leftHandMax)) {
-        for (int i = 36; i < 48; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
-    }
-    // Right leg
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.rightLegMin, playerVerticesSSBO.rightLegMax)) {
-        for (int i = 48; i < 60; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
-    }
-    // Torso
-    if (intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.torsoMin, playerVerticesSSBO.torsoMax)) {
-        for (int i = 60; i < 72; i++) {
-            CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
-        }
+    // Body parts in quad order: head, right hand, left leg, left hand, right leg, torso
+    uint parts = uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.headMin, playerVerticesSSBO.headMax))
+               | uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.rightHandMin, playerVerticesSSBO.rightHandMax)) << 1u
+               | uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.leftLegMin, playerVerticesSSBO.leftLegMax)) << 2u
+               | uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.leftHandMin, playerVerticesSSBO.leftHandMax)) << 3u
+               | uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.rightLegMin, playerVerticesSSBO.rightLegMax)) << 4u
+               | uint(intersectsAABB(aabbPos, rayDir, playerVerticesSSBO.torsoMin, playerVerticesSSBO.torsoMax)) << 5u;
+    // Skipping a missed part moves i, so the compiler keeps one loop instead of 72 unrolled quad tests
+    for (int i = 0; i < 72; i++) {
+        if ((parts >> uint(i / 12) & 1u) == 0u) { i += 11; continue; }
+        CheckQuadAt(i, playerPos, rayDir, albedo, tMin, normal);
     }
 
     #ifdef WSR_PLAYER_EQUIPMENT
