@@ -8,23 +8,26 @@ vec3 GetShadowPos(vec3 playerPos) {
 }
 
 #ifndef COMPOSITE1
-    vec3 SampleShadow(vec3 shadowPos, float colorMult, float colorPow) {
-        float shadow0 = shadow2D(shadowtex0, vec3(shadowPos.st, shadowPos.z)).x;
-
+    vec3 SampleShadowColor(vec3 shadowPos, float shadow0, float shadow1, float colorMult, float colorPow) {
         vec3 shadowcol = vec3(0.0);
-        if (shadow0 < 1.0) {
-            float shadow1 = shadow2D(shadowtex1, vec3(shadowPos.st, shadowPos.z)).x;
+        if (shadow0 < 1.0 && shadow1 * 0.9999 > shadow0) {
+            shadowcol = texture2D(shadowcolor0, shadowPos.st).rgb * shadow1;
 
-            if (shadow1 * 0.9999 > shadow0)
-            {
-                shadowcol = texture2D(shadowcolor0, shadowPos.st).rgb * shadow1;
-
-                shadowcol *= colorMult;
-                shadowcol = pow(shadowcol, vec3(colorPow));
-            }
+            shadowcol *= colorMult;
+            shadowcol = pow(shadowcol, vec3(colorPow));
         }
 
         return shadowcol * (1.0 - shadow0) + shadow0;
+    }
+
+    vec3 SampleShadowRest(vec3 shadowPos, float shadow0, float colorMult, float colorPow) {
+        float shadow1 = 0.0;
+        if (shadow0 < 1.0) shadow1 = shadow2D(shadowtex1, vec3(shadowPos.st, shadowPos.z)).x;
+        return SampleShadowColor(shadowPos, shadow0, shadow1, colorMult, colorPow);
+    }
+
+    vec3 SampleShadow(vec3 shadowPos, float colorMult, float colorPow) {
+        return SampleShadowRest(shadowPos, shadow2D(shadowtex0, shadowPos).x, colorMult, colorPow);
     }
 
     float InterleavedGradientNoiseForShadows() {
@@ -52,12 +55,31 @@ vec3 GetShadowPos(vec3 playerPos) {
             offset *= 0.69375;
         #endif
 
-        float shadowPosZM = shadowPos.z;
-        for (int i = 0; i < shadowSamples; i++) {
-            vec2 offset2 = offsetDist(gradientNoise + i, shadowSamples) * offset;
-            if (leaves) shadowPosZM = shadowPos.z - 0.12 * offset * (gradientNoise + i) / shadowSamples;
-            shadow += SampleShadow(vec3(shadowPos.st + offset2, shadowPosZM), colorMult, colorPow);
-            shadow += SampleShadow(vec3(shadowPos.st - offset2, shadowPosZM), colorMult, colorPow);
+        // Four depth fetches go out before any dependent work so their latency overlaps.
+        // shadowSamples is always even.
+        for (int i = 0; i < shadowSamples; i += 2) {
+            vec2 offsetA = offsetDist(gradientNoise + i, shadowSamples) * offset;
+            vec2 offsetB = offsetDist(gradientNoise + (i + 1), shadowSamples) * offset;
+            float zA = shadowPos.z, zB = shadowPos.z;
+            if (leaves) {
+                zA = shadowPos.z - 0.12 * offset * (gradientNoise + i) / shadowSamples;
+                zB = shadowPos.z - 0.12 * offset * (gradientNoise + (i + 1)) / shadowSamples;
+            }
+            vec3 p0 = vec3(shadowPos.st + offsetA, zA);
+            vec3 p1 = vec3(shadowPos.st - offsetA, zA);
+            vec3 p2 = vec3(shadowPos.st + offsetB, zB);
+            vec3 p3 = vec3(shadowPos.st - offsetB, zB);
+            float s0 = shadow2D(shadowtex0, p0).x;
+            float s1 = shadow2D(shadowtex0, p1).x;
+            float s2 = shadow2D(shadowtex0, p2).x;
+            float s3 = shadow2D(shadowtex0, p3).x;
+            vec4 t = vec4(0.0);
+            if (min(min(s0, s1), min(s2, s3)) < 1.0)
+                t = vec4(shadow2D(shadowtex1, p0).x, shadow2D(shadowtex1, p1).x, shadow2D(shadowtex1, p2).x, shadow2D(shadowtex1, p3).x);
+            shadow += SampleShadowColor(p0, s0, t.x, colorMult, colorPow);
+            shadow += SampleShadowColor(p1, s1, t.y, colorMult, colorPow);
+            shadow += SampleShadowColor(p2, s2, t.z, colorMult, colorPow);
+            shadow += SampleShadowColor(p3, s3, t.w, colorMult, colorPow);
         }
 
         shadow /= shadowSamples * 2.0;

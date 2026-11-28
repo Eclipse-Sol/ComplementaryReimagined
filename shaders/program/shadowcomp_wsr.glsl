@@ -22,57 +22,8 @@
 
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
-    #if WORLD_SPACE_SHAPES > 0 && (WORLD_SPACE_SMOOTH_LIGHTING <= 0 || WSR_REBUILD_PERCENT <= 13)
-        #if COLORED_LIGHTING_INTERNAL >= 384 && WSR_VOLUME_HEIGHT == 256
-            const ivec3 workGroups = ivec3(32768, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 384 && WSR_VOLUME_HEIGHT == 128
-            const ivec3 workGroups = ivec3(24576, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 384
-            const ivec3 workGroups = ivec3(16384, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 256 && WSR_VOLUME_HEIGHT == 256
-            const ivec3 workGroups = ivec3(16384, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 256 && WSR_VOLUME_HEIGHT == 128
-            const ivec3 workGroups = ivec3(12288, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 256
-            const ivec3 workGroups = ivec3(8192, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 192 && WSR_VOLUME_HEIGHT == 256
-            const ivec3 workGroups = ivec3(8192, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 192 && WSR_VOLUME_HEIGHT == 128
-            const ivec3 workGroups = ivec3(6144, 1, 1);
-        #elif COLORED_LIGHTING_INTERNAL >= 192
-            const ivec3 workGroups = ivec3(4096, 1, 1);
-        #elif WSR_VOLUME_HEIGHT == 256
-            const ivec3 workGroups = ivec3(4096, 1, 1);
-        #elif WSR_VOLUME_HEIGHT == 128
-            const ivec3 workGroups = ivec3(3072, 1, 1);
-        #else
-            const ivec3 workGroups = ivec3(2048, 1, 1);
-        #endif
-    #elif COLORED_LIGHTING_INTERNAL >= 384 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 256
-        const ivec3 workGroups = ivec3(49152, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 384 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 128
-        const ivec3 workGroups = ivec3(36864, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 256 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 256
-        const ivec3 workGroups = ivec3(24576, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 256 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 128
-        const ivec3 workGroups = ivec3(18432, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 192 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 256
-        const ivec3 workGroups = ivec3(12288, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 192 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 128
-        const ivec3 workGroups = ivec3(9216, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 256
-        const ivec3 workGroups = ivec3(6144, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL > 0 && WORLD_SPACE_SHAPES > 0 && WSR_VOLUME_HEIGHT == 128
-        const ivec3 workGroups = ivec3(4608, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 384
-        const ivec3 workGroups = ivec3(24576, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 256
-        const ivec3 workGroups = ivec3(12288, 1, 1);
-    #elif COLORED_LIGHTING_INTERNAL >= 192
-        const ivec3 workGroups = ivec3(6144, 1, 1);
-    #else
-        const ivec3 workGroups = ivec3(3072, 1, 1);
-    #endif
+    // A fixed grid loops over the captures. A grid sized to capacity spent most of the pass on idle waves.
+    const ivec3 workGroups = ivec3(2048, 1, 1);
 #else
     const ivec3 workGroups = ivec3(1, 1, 1);
 #endif
@@ -85,16 +36,32 @@ layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 //Program//
 void main() {
     #if WORLD_SPACE_REFLECTIONS_INTERNAL > 0
-        uint captureIndex = gl_GlobalInvocationID.x;
-        if (ReflectionStorageAvailable() && captureIndex < min(blockDataSSBO.grassCaptureCount, grassCaptureCapacity))
-            ResolveGrassSideOverlay(captureIndex);
+    if (ReflectionStorageAvailable()) {
+        uint grassCount = min(blockDataSSBO.grassCaptureCount, grassCaptureCapacity);
         #if WORLD_SPACE_SHAPES > 0
-            if (ReflectionStorageAvailable()) ResolveReflectionLavaHeights(captureIndex);
+            uint lavaCount = min(blockDataSSBO.faceAllocationAttempts, blockDataSSBO.allocationCapacity);
+            uint lavaStart = blockDataSSBO.allocationStartIndex;
+            uint captureFrame = shapeDataSSBO.captureFrame;
+        #else
+            uint lavaCount = 0u;
         #endif
         #if WORLD_SPACE_SMOOTH_LIGHTING > 0
-            if (ReflectionStorageAvailable() && captureIndex < min(blockDataSSBO.cornerCaptureCount, reflectionCornerCaptureCapacity))
-                ResolveReflectionCornerLighting(captureIndex);
+            uint cornerCount = min(blockDataSSBO.cornerCaptureCount, reflectionCornerCaptureCapacity);
+        #else
+            uint cornerCount = 0u;
         #endif
+        uint count = max(grassCount, max(lavaCount, cornerCount));
+        uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+        for (uint captureIndex = gl_GlobalInvocationID.x; captureIndex < count; captureIndex += stride) {
+            if (captureIndex < grassCount) ResolveGrassSideOverlay(captureIndex);
+            #if WORLD_SPACE_SHAPES > 0
+                if (captureIndex < lavaCount) ResolveReflectionLavaHeights(captureIndex, lavaStart, captureFrame);
+            #endif
+            #if WORLD_SPACE_SMOOTH_LIGHTING > 0
+                if (captureIndex < cornerCount) ResolveReflectionCornerLighting(captureIndex);
+            #endif
+        }
+    }
     #endif
     #if defined WSR_PLAYER_EQUIPMENT && WORLD_SPACE_SHAPES <= 0
         if (gl_GlobalInvocationID.x == 0u)

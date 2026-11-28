@@ -48,14 +48,12 @@ void ResolveReflectionCornerLighting(uint index) {
 #endif
 
 #if WORLD_SPACE_SHAPES > 0
-void ResolveReflectionLavaHeights(uint offset) {
-    uint count = min(blockDataSSBO.faceAllocationAttempts, blockDataSSBO.allocationCapacity);
-    if (offset >= count) return;
-    uint index = GetReflectionRingIndex(blockDataSSBO.allocationStartIndex, offset, 2u * reflectionFaceCapacity);
+void ResolveReflectionLavaHeights(uint offset, uint start, uint captureFrame) {
+    uint index = GetReflectionRingIndex(start, offset, 2u * reflectionFaceCapacity);
     uint word = uint(reflectionFaceRecordBase) + 4u * index;
     uint key = blockDataSSBO.words[word + 2u];
     if ((key & reflectionFaceAuxFlagsMask) != reflectionFaceAuxLavaFlag
-        || blockDataSSBO.words[word + 3u] != (shapeDataSSBO.captureFrame | reflectionFaceAuxFlag)) return;
+        || blockDataSSBO.words[word + 3u] != (captureFrame | reflectionFaceAuxFlag)) return;
     ivec3 cell = GetSceneVoxelPosition(key & sceneVoxelIndexMask);
     uvec4 corners = GetLavaCornerWords(cell);
     if (any(notEqual(corners & uvec4(lavaFrameStampMask), uvec4(GetLavaFrameStamp())))) return;

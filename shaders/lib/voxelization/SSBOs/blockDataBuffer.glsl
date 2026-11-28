@@ -52,8 +52,7 @@ const int reflectionGrassCaptureBase = reflectionFaceRecordBase + 8 * int(reflec
     #if WORLD_SPACE_SHAPES > 0
         // Each frame captures one of reflectionActiveRegionCount regions, so more regions need fewer corner captures per frame.
         //
-        // Keep these thresholds in sync with the WSR_REBUILD_PERCENT checks in
-        // shadowcomp_wsr.glsl (dispatch size) and shaders.properties (bufferObject.0)
+        // Keep these thresholds in sync with the WSR_REBUILD_PERCENT checks in shaders.properties (bufferObject.0)
         const uint reflectionCornerCaptureDivisor = reflectionActiveRegionCount >= 20 ? 8u
             : reflectionActiveRegionCount >= 10 ? 4u : reflectionActiveRegionCount >= 8 ? 3u : 1u;
     #else
